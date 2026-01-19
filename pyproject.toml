@@ -1,0 +1,18 @@
+[project]
+name = "dbtui"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "textual>=7.3.0",
+    "textual-plotext>=1.0.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "duckcli>=0.2.1",
+    "dbt-duckdb>=1.9.0,<2.0.0",
+    "dbt-core>=1.9.0,<1.10.0",
+    "sqlfluff>=2.3.5,<3"
+]
