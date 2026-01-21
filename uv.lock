@@ -319,6 +319,7 @@ name = "dbtui"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "pyyaml" },
     { name = "textual" },
     { name = "textual-plotext" },
 ]
@@ -336,6 +337,7 @@ requires-dist = [
     { name = "dbt-core", marker = "extra == 'dev'", specifier = ">=1.9.0,<1.10.0" },
     { name = "dbt-duckdb", marker = "extra == 'dev'", specifier = ">=1.9.0,<2.0.0" },
     { name = "duckcli", marker = "extra == 'dev'", specifier = ">=0.2.1" },
+    { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "sqlfluff", marker = "extra == 'dev'", specifier = ">=2.3.5,<3" },
     { name = "textual", specifier = ">=7.3.0" },
     { name = "textual-plotext", specifier = ">=1.0.1" },
