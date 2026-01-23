@@ -31,7 +31,7 @@ import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Union
 
 import yaml
 
@@ -83,7 +83,7 @@ class DBTCLI:
     def run(
         self,
         args: List[str],
-        cwd: Optional[str] = None,
+        cwd: Optional[Union[str, os.PathLike[str]]] = None,
         env: Optional[Dict[str, str]] = None,
         timeout: Optional[float] = None,
         capture_output: bool = True,
@@ -109,6 +109,7 @@ class DBTCLI:
                 "dbt binary not found. Please install dbt or provide a path to DBTCLI."
             )
 
+        assert self.path is not None
         cmd = [self.path] + list(args)
         run_env = os.environ.copy()
         if env:
