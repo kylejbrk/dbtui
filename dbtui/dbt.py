@@ -348,6 +348,7 @@ if __name__ == "__main__":
     project = DBTProject(project_path="./jaffle_shop_duckdb/")
     manifest = project.load_manifest()  # returns DBTManifest or None if not present
 
+    print(manifest)
     # run `dbt compile`
-    result = cli.run(["debug"], cwd=project.project_path, timeout=30_000)
-    print(result.returncode, result.stdout)
+    # result = cli.run(["debug"], cwd=project.project_path, timeout=30_000)
+    # print(result.returncode, result.stdout)

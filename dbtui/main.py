@@ -1,27 +1,39 @@
 import argparse
-from pathlib import Path
+from typing import cast
 
-from dbt import DBTProject
+from dbt import DBTCLI, DBTProject
 from textual.app import App
 from textual.widgets import Header, Label, ListItem, ListView
 
 
+class NodeSelector(ListView):
+    def __init__(self, models=None, **kwargs):
+        super().__init__(**kwargs)
+        self.models = models or []
+
+    def on_mount(self):
+        self.populate()
+
+    def populate(self):
+        for model in self.models:
+            name = (
+                model.get("name", "Unknown") if isinstance(model, dict) else str(model)
+            )
+            self.append(ListItem(Label(name)))
+
+
 class DBTUI(App):
-    def __init__(self, project_path=None):
+    def __init__(self, project_path=None, dbt_path=None):
         super().__init__()
-        self.project_path = Path(project_path)
+        self.project_path = project_path
+        self.dbt_path = dbt_path
+
+        self.cli = DBTCLI(path=self.dbt_path)
+        self.project = DBTProject(project_path=self.project_path)
 
     def compose(self):
         yield Header()
-        self.list_view = ListView()
-        yield self.list_view
-
-    async def on_mount(self):
-        project = DBTProject(str(self.project_path))
-        model_paths = project.find_model_file_paths()
-        for path in model_paths:
-            name = path.stem
-            self.list_view.append(ListItem(Label(name)))
+        yield NodeSelector(models=self.project.list_models(), id="node_selector")
 
 
 if __name__ == "__main__":
@@ -30,9 +42,12 @@ if __name__ == "__main__":
         "--project-path",
         type=str,
         default=None,
-        help="Defaults to current directory",
+        help="Path to dbt project directory.",
+    )
+    parser.add_argument(
+        "--dbt_path", type=str, default=None, help="Path to dbt executable."
     )
     args = parser.parse_args()
 
-    app = DBTUI(args.project_path)
+    app = DBTUI(args.project_path, args.dbt_path)
     app.run()
