@@ -342,7 +342,9 @@ class DBTProject:
 
 
 if __name__ == "__main__":
-    cli = DBTCLI(path="../.venv/bin/dbt")  # will try to find `dbt` on PATH
+    cli = DBTCLI(
+        path="../jaffle_shop_duckdb/venv/bin/dbt"
+    )  # will try to find `dbt` on PATH
     project = DBTProject(project_path="./jaffle_shop_duckdb/")
     manifest = project.load_manifest()  # returns DBTManifest or None if not present
 
