@@ -1,25 +1,29 @@
 import argparse
-from typing import cast
 
 from dbt import DBTCLI, DBTProject
 from textual.app import App
-from textual.widgets import Header, Label, ListItem, ListView
+from textual.containers import Container, Horizontal
+from textual.widgets import Header, Static, Tree
 
 
-class NodeSelector(ListView):
-    def __init__(self, models=None, **kwargs):
+class NodeTree(Tree):
+    def __init__(self, project, **kwargs):
         super().__init__(**kwargs)
-        self.models = models or []
+        self.project = project
+        self.show_root = False
+        self.guide = 2
 
     def on_mount(self):
         self.populate()
 
     def populate(self):
-        for model in self.models:
-            name = (
-                model.get("name", "Unknown") if isinstance(model, dict) else str(model)
-            )
-            self.append(ListItem(Label(name)))
+        model_tree = self.root.add("Models", expand=True)
+        for model in self.project.list_models():
+            model_tree.add_leaf(model.get("name"), data=model)
+
+        source_tree = self.root.add("Sources", expand=True)
+        for source in self.project.list_sources():
+            source_tree.add_leaf(source.get("name"), data=source)
 
 
 class DBTUI(App):
@@ -33,7 +37,15 @@ class DBTUI(App):
 
     def compose(self):
         yield Header()
-        yield NodeSelector(models=self.project.list_models(), id="node_selector")
+        with Horizontal():
+            yield Container(
+                NodeTree(
+                    label="node_tree",
+                    project=self.project,
+                    id="node_selector",
+                )
+            )
+            yield Container(Static("Select a node to view details", id="node_details"))
 
 
 if __name__ == "__main__":
