@@ -2,11 +2,11 @@ import argparse
 
 from dbt import DBTCLI, DBTProject
 from textual.app import App
-from textual.containers import Container, Horizontal
-from textual.widgets import Header, Static, Tree
+from textual.containers import Horizontal, ScrollableContainer
+from textual.widgets import Header, Pretty, Tree
 
 
-class NodeTree(Tree):
+class SideBar(Tree):
     def __init__(self, models=None, sources=None, seeds=None, **kwargs):
         super().__init__(**kwargs)
         self.models = models
@@ -36,6 +36,8 @@ class NodeTree(Tree):
 
 
 class DBTUI(App):
+    CSS_PATH = "dbtui.tcss"
+
     def __init__(self, project_path=None, dbt_path=None):
         super().__init__()
         self.project_path = project_path
@@ -47,20 +49,28 @@ class DBTUI(App):
     def compose(self):
         yield Header()
         with Horizontal():
-            yield Container(
-                NodeTree(
-                    label="node_tree",
-                    models=self.project.list_models(),
-                    sources=self.project.list_sources(),
-                    seeds=self.project.list_seeds(),
-                    id="node_selector",
-                )
+            yield SideBar(
+                label="node_tree",
+                models=self.project.list_models(),
+                sources=self.project.list_sources(),
+                seeds=self.project.list_seeds(),
+                id="sidebar",
             )
-            yield Container(Static("Select a node to view details", id="node_details"))
+            yield ScrollableContainer(
+                Pretty("Select a node to view details.", id="node_details")
+            )
 
     def on_mount(self):
+        self.title = "DBTUI"
         if self.project.project_name:
-            self.title = self.project.project_name
+            self.sub_title = self.project.project_name
+
+    def on_tree_node_selected(self, event: Tree.NodeSelected) -> None:
+        details_widget = self.query_one("#node_details", Pretty)
+        if event.node.data:
+            details_widget.update(event.node.data)
+        else:
+            details_widget.update("No data available for this node")
 
 
 if __name__ == "__main__":
