@@ -306,6 +306,15 @@ class DBTProject:
             return []
         return manifest.list_sources()
 
+    def list_seeds(self) -> List[Dict[str, Any]]:
+        """
+        List seeds defined in the manifest (if present).
+        """
+        manifest = self.load_manifest()
+        if not manifest:
+            return []
+        return manifest.list_nodes(resource_type="seed")
+
     def reload(self) -> None:
         """
         Reload project metadata and manifest.
@@ -348,7 +357,7 @@ if __name__ == "__main__":
     project = DBTProject(project_path="./jaffle_shop_duckdb/")
     manifest = project.load_manifest()  # returns DBTManifest or None if not present
 
-    print(manifest)
+    print(project.list_seeds())
     # run `dbt compile`
     # result = cli.run(["debug"], cwd=project.project_path, timeout=30_000)
     # print(result.returncode, result.stdout)
