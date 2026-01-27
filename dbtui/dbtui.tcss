@@ -3,4 +3,45 @@
     width: auto;
     height: 100%;
     padding: 1;
+    border: round green;
+}
+
+#node_details {
+    border: round green;
+    height: 100%;
+    padding: 1;
+}
+
+.section-title {
+    text-style: bold;
+    color: $accent;
+    margin-bottom: 1;
+}
+
+#node_description {
+    color: $text-muted;
+    margin-bottom: 1;
+}
+
+#node_location {
+    color: $secondary;
+    margin-bottom: 1;
+}
+
+#node_columns {
+    margin-left: 1;
+}
+
+#node_parents, #node_children {
+    margin-left: 1;
+}
+
+#node_sql {
+    margin: 1;
+    padding: 1;
+    background: $surface;
+}
+
+Collapsible {
+    margin-top: 1;
 }
