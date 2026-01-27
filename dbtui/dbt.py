@@ -34,6 +34,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 import yaml
+from dbt_artifacts_parser.parser import parse_catalog
 
 __all__ = ["DBTCLI", "DBTProject", "DBTManifest"]
 
