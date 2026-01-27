@@ -3,7 +3,16 @@ import argparse
 from dbt import DBTCLI, DBTProject
 from textual.app import App
 from textual.containers import Horizontal, ScrollableContainer, VerticalScroll
-from textual.widgets import Collapsible, Header, Label, Markdown, Pretty, Static, Tree
+from textual.widgets import (
+    Collapsible,
+    Footer,
+    Header,
+    Label,
+    Markdown,
+    Pretty,
+    Static,
+    Tree,
+)
 
 
 class SideBar(Tree):
@@ -130,7 +139,7 @@ class NodeDetails(VerticalScroll):
 
 class DBTUI(App):
     CSS_PATH = "dbtui.tcss"
-    BINDINGS = [("q", "quit", "Quit the application")]
+    BINDINGS = [("q", "quit", "Quit")]
 
     def __init__(self, project_path=None, dbt_path=None):
         super().__init__()
@@ -151,6 +160,7 @@ class DBTUI(App):
                 id="sidebar",
             )
             yield NodeDetails(id="node_details")
+        yield Footer()
 
     def on_mount(self):
         self.title = "DBTUI"
