@@ -34,7 +34,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 import yaml
-from dbt_artifacts_parser.parser import parse_catalog
+from dbt_artifacts_parser.parser import parse_manifest
 
 __all__ = ["DBTCLI", "DBTProject", "DBTManifest"]
 
@@ -136,68 +136,38 @@ class DBTCLI:
 
 class DBTManifest:
     """
-    Lightweight accessor for a dbt `manifest.json` file.
-
-    The manifest is parsed into a dictionary internally. This helper exposes
-    convenience methods for common lookups (models, tests, sources).
-
-    Usage:
-        manifest = DBTManifest.from_path("/path/to/target/manifest.json")
-        for node in manifest.list_nodes():
-            ...
+    Parser and lightweight accessor for `manifest.json`.
     """
 
-    def __init__(self, manifest_data: Dict[str, Any]) -> None:
-        self._data = manifest_data
-
-        # manifest structure: keys like "nodes", "sources", "macros", "parents", etc.
-        self.nodes: Dict[str, Dict[str, Any]] = manifest_data.get("nodes", {})
-        self.sources: Dict[str, Dict[str, Any]] = manifest_data.get("sources", {})
-        self.macros: Dict[str, Dict[str, Any]] = manifest_data.get("macros", {})
-        self.metadata: Dict[str, Any] = manifest_data.get("metadata", {})
+    def __init__(self, data: Dict[str, Any]) -> None:
+        self._data = data
+        self._native = parse_manifest(manifest=data)
 
     @classmethod
-    def from_path(cls, path: str) -> "DBTManifest":
-        """
-        Load manifest.json from a filesystem path and return a DBTManifest instance.
-
-        Raises:
-            FileNotFoundError: if the file does not exist.
-            json.JSONDecodeError: if the file is not valid JSON.
-        """
-        p = Path(path)
-        if not p.exists():
-            raise FileNotFoundError(f"manifest.json not found at {path!r}")
-        with p.open("r", encoding="utf-8") as fh:
-            data = json.load(fh)
+    def from_file(cls, path: Path) -> DBTManifest:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
         return cls(data)
 
-    def list_nodes(self, resource_type: Optional[str] = None) -> List[Dict[str, Any]]:
-        """
-        Return a list of node dicts. Optionally filter by resource_type (e.g. "model").
-        """
-        nodes = list(self.nodes.values())
-        if resource_type:
-            return [n for n in nodes if n.get("resource_type") == resource_type]
-        return nodes
+    @property
+    def native(self) -> Any:
+        """The underlying dbt-artifacts-parser result."""
+        return self._native
 
-    def get_node(self, unique_id: str) -> Optional[Dict[str, Any]]:
-        """
-        Return the node dictionary for the given unique_id, or None if not present.
-        """
-        return self.nodes.get(unique_id)
+    @property
+    def nodes(self) -> Dict[str, Any]:
+        """Map of node unique_id to Node object."""
+        return self._native.nodes or {}
 
-    def list_sources(self) -> List[Dict[str, Any]]:
-        """
-        Return a list of sources from the manifest.
-        """
-        return list(self.sources.values())
+    @property
+    def sources(self) -> Dict[str, Any]:
+        """Map of source unique_id to Source object."""
+        return self._native.sources or {}
 
-    def find_models_by_package(self, package_name: str) -> List[Dict[str, Any]]:
-        """
-        Return nodes that belong to a specific package.
-        """
-        return [n for n in self.nodes.values() if n.get("package_name") == package_name]
+    @property
+    def macros(self) -> Dict[str, Any]:
+        """Map of macro unique_id to Macro object."""
+        return self._native.macros or {}
 
 
 class DBTProject:
@@ -205,7 +175,6 @@ class DBTProject:
     Helper to represent and interact with a dbt project on disk.
 
     Responsibilities:
-    - locate and load `dbt_project.yml`
     - locate target/manifest.json and parse it via DBTManifest
     - provide convenience helpers to list models and sources
 
@@ -263,7 +232,11 @@ class DBTProject:
 
         Note: dbt writes `manifest.json` to `<project_root>/target/manifest.json` by default.
         """
-        return self.project_path / "target" / "manifest.json"
+        return (
+            self.project_path
+            / self.project_yaml.get("target-path", "target")
+            / "manifest.json"
+        )
 
     def has_manifest(self) -> bool:
         """Return True if `target/manifest.json` exists."""
@@ -286,69 +259,92 @@ class DBTProject:
         if not manifest_file.exists():
             return None
 
-        self._manifest = DBTManifest.from_path(str(manifest_file))
+        self._manifest = DBTManifest.from_file(manifest_file)
         return self._manifest
 
-    def list_models(self) -> List[Dict[str, Any]]:
+    def get_nodes(self) -> Dict[str, Any]:
         """
-        List models defined in the manifest (if present). Returns an empty list if no manifest.
+        Convenience: return all nodes from the manifest, if loaded.
+
+        Returns:
+            Dict of node unique_id to Node object, or empty dict if no manifest.
         """
         manifest = self.load_manifest()
-        if not manifest:
-            return []
-        return manifest.list_nodes(resource_type="model")
+        if manifest:
+            return manifest.nodes
+        return {}
 
-    def list_sources(self) -> List[Dict[str, Any]]:
+    def get_models(self) -> Dict[str, Any]:
         """
-        List sources defined in the manifest (if present).
+        Convenience: return all model nodes from the manifest, if loaded.
+
+        Returns:
+            Dict of model unique_id to Node object, or empty dict if no manifest.
         """
         manifest = self.load_manifest()
-        if not manifest:
-            return []
-        return manifest.list_sources()
+        if manifest:
+            return {
+                uid: node
+                for uid, node in manifest.nodes.items()
+                if node.resource_type == "model"
+            }
+        return {}
 
-    def list_seeds(self) -> List[Dict[str, Any]]:
+    def get_seeds(self) -> Dict[str, Any]:
         """
-        List seeds defined in the manifest (if present).
+        Convenience: return all seed nodes from the manifest, if loaded.
+
+        Returns:
+            Dict of seed unique_id to Node object, or empty dict if no manifest.
         """
         manifest = self.load_manifest()
-        if not manifest:
-            return []
-        return manifest.list_nodes(resource_type="seed")
+        if manifest:
+            return {
+                uid: node
+                for uid, node in manifest.nodes.items()
+                if node.resource_type == "seed"
+            }
+        return {}
 
-    def reload(self) -> None:
+    def get_tests(self) -> Dict[str, Any]:
         """
-        Reload project metadata and manifest.
-        Useful if files changed on disk.
-        """
-        self._load_project_yaml()
-        # force manifest reload next time
-        self._manifest = None
+        Convenience: return all test nodes from the manifest, if loaded.
 
-    def path_for(self, relative: str) -> Path:
+        Returns:
+            Dict of test unique_id to Node object, or empty dict if no manifest.
         """
-        Return an absolute Path for a file relative to the project root.
+        manifest = self.load_manifest()
+        if manifest:
+            return {
+                uid: node
+                for uid, node in manifest.nodes.items()
+                if node.resource_type == "test"
+            }
+        return {}
 
-        Example:
-            p.path_for('models/my_model.sql')
+    def get_sources(self) -> Dict[str, Any]:
         """
-        return (self.project_path / relative).resolve()
+        Convenience: return all sources from the manifest, if loaded.
 
-    def find_model_file_paths(self) -> List[Path]:
+        Returns:
+            Dict of source unique_id to Source object, or empty dict if no manifest.
         """
-        A simple heuristic to find model files on disk by looking in `models/` directory
-        and commonly named subdirs. Returns absolute paths.
+        manifest = self.load_manifest()
+        if manifest:
+            return manifest.sources
+        return {}
+
+    def get_macros(self) -> Dict[str, Any]:
         """
-        model_dir = self.project_path / "models"
-        if not model_dir.exists():
-            return []
-        paths: List[Path] = []
-        for p in model_dir.rglob("*.sql"):
-            # skip hidden files
-            if p.name.startswith("."):
-                continue
-            paths.append(p.resolve())
-        return paths
+        Convenience: return all macros from the manifest, if loaded.
+
+        Returns:
+            Dict of macro unique_id to Macro object, or empty dict if no manifest.
+        """
+        manifest = self.load_manifest()
+        if manifest:
+            return manifest.macros
+        return {}
 
 
 if __name__ == "__main__":
@@ -356,9 +352,10 @@ if __name__ == "__main__":
         path="../jaffle_shop_duckdb/venv/bin/dbt"
     )  # will try to find `dbt` on PATH
     project = DBTProject(project_path="./jaffle_shop_duckdb/")
-    manifest = project.load_manifest()  # returns DBTManifest or None if not present
+    project.load_manifest()  # returns DBTManifest or None if not present
 
-    print(project.list_seeds())
+    print(project.get_nodes().keys())
+
     # run `dbt compile`
     # result = cli.run(["debug"], cwd=project.project_path, timeout=30_000)
     # print(result.returncode, result.stdout)
