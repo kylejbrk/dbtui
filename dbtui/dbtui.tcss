@@ -6,9 +6,13 @@
     border: round green;
 }
 
+#details_container {
+    height: 100%;
+    overflow: auto;
+}
+
 #node_details {
     border: round green;
-    height: 100%;
     padding: 1;
 }
 

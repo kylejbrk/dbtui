@@ -31,17 +31,17 @@ class SideBar(Tree):
         if self.models:
             model_tree = self.root.add("Models", expand=True)
             for model in self.models:
-                model_tree.add_leaf(model.get("name"), data=model)
+                model_tree.add_leaf(model, data=self.models[model])
 
         if self.sources:
             source_tree = self.root.add("Sources", expand=True)
             for source in self.sources:
-                source_tree.add_leaf(source.get("name"), data=source)
+                source_tree.add_leaf(source, data=self.sources[source])
 
         if self.seeds:
             seed_tree = self.root.add("Seeds", expand=True)
             for seed in self.seeds:
-                seed_tree.add_leaf(seed.get("name"), data=seed)
+                seed_tree.add_leaf(seed, data=self.seeds[seed])
 
 
 class NodeDetails(VerticalScroll):
@@ -154,12 +154,14 @@ class DBTUI(App):
         with Horizontal():
             yield SideBar(
                 label="node_tree",
-                models=self.project.list_models(),
-                sources=self.project.list_sources(),
-                seeds=self.project.list_seeds(),
+                models=self.project.get_models(),
+                sources=self.project.get_sources(),
+                seeds=self.project.get_seeds(),
                 id="sidebar",
             )
-            yield NodeDetails(id="node_details")
+            with ScrollableContainer(id="details_container"):
+                with VerticalScroll():
+                    yield Pretty("", id="node_details")
         yield Footer()
 
     def on_mount(self):
@@ -168,11 +170,11 @@ class DBTUI(App):
             self.sub_title = self.project.project_name
 
     def on_tree_node_selected(self, event: Tree.NodeSelected) -> None:
-        details_widget = self.query_one("#node_details", NodeDetails)
+        details_widget = self.query_one("#node_details", Pretty)
         if event.node.data:
-            details_widget.update_details(event.node.data)
+            details_widget.update(event.node.data)
         else:
-            details_widget.update_details(None)
+            details_widget.update({})
 
 
 if __name__ == "__main__":
