@@ -6,14 +6,11 @@
     border: round green;
 }
 
-#details_container {
-    height: 100%;
-    overflow: auto;
-}
-
 #node_details {
+    height: 100%;
     border: round green;
     padding: 1;
+    overflow: auto;
 }
 
 .section-title {
