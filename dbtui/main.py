@@ -3,7 +3,7 @@ import argparse
 from dbt import DBTCLI, DBTProject
 from node_details import NodeDetailsWidget
 from textual.app import App
-from textual.containers import Horizontal, VerticalScroll
+from textual.containers import Horizontal
 from textual.widgets import Footer, Header, Tree
 
 
