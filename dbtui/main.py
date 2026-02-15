@@ -29,9 +29,8 @@ class SideBar(Tree):
     def populate(self):
         # Clear any existing root children if re-populating
         try:
-            # textual Tree does not offer a direct clear, so recreate root children by removing them
-            for child in list(self.root.children):
-                self.root.remove(child)
+            # textual Tree API supports clearing the whole tree from root
+            self.clear()
         except Exception:
             pass
 
@@ -43,17 +42,25 @@ class SideBar(Tree):
         sources = manifest.get("sources", {})
 
         if "model" in self.include:
-            model_tree = self.root.add("Models", expand=True)
+            model_nodes = {
+                uid: node
+                for uid, node in nodes.items()
+                if node.get("resource_type") == "model"
+            }
+            model_tree = self.root.add(
+                f"Models ({len(model_nodes)})", expand=len(model_nodes) > 0
+            )
             # nodes is {uid: node_dict}
             for uid, node in sorted(
-                nodes.items(), key=lambda kv: kv[1].get("name", kv[0])
+                model_nodes.items(), key=lambda kv: kv[1].get("name", kv[0])
             ):
-                if node.get("resource_type") == "model":
-                    display_name = node.get("name", uid)
-                    model_tree.add_leaf(display_name, data=node)
+                display_name = node.get("name", uid)
+                model_tree.add_leaf(display_name, data=node)
 
         if "source" in self.include:
-            source_tree = self.root.add("Sources", expand=True)
+            source_tree = self.root.add(
+                f"Sources ({len(sources)})", expand=len(sources) > 0
+            )
             for uid, src in sorted(
                 sources.items(), key=lambda kv: kv[1].get("name", kv[0])
             ):
@@ -61,13 +68,19 @@ class SideBar(Tree):
                 source_tree.add_leaf(display_name, data=src)
 
         if "seed" in self.include:
-            seed_tree = self.root.add("Seeds", expand=True)
+            seed_nodes = {
+                uid: node
+                for uid, node in nodes.items()
+                if node.get("resource_type") == "seed"
+            }
+            seed_tree = self.root.add(
+                f"Seeds ({len(seed_nodes)})", expand=len(seed_nodes) > 0
+            )
             for uid, node in sorted(
-                nodes.items(), key=lambda kv: kv[1].get("name", kv[0])
+                seed_nodes.items(), key=lambda kv: kv[1].get("name", kv[0])
             ):
-                if node.get("resource_type") == "seed":
-                    display_name = node.get("name", uid)
-                    seed_tree.add_leaf(display_name, data=node)
+                display_name = node.get("name", uid)
+                seed_tree.add_leaf(display_name, data=node)
 
 
 class DBTUI(App):
