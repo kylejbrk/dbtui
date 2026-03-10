@@ -2,85 +2,10 @@ import argparse
 
 from dbt import DBTCLI, DBTProject
 from node_details import NodeDetailsWidget
+from sidebar import SideBar
 from textual.app import App
 from textual.containers import Horizontal
-from textual.widgets import Footer, Header, Tree
-
-
-class SideBar(Tree):
-    def __init__(self, project=None, include=("model", "source", "seed"), **kwargs):
-        """
-        SideBar consumes a DBTProject (single source-of-truth) and populates
-        models/sources/seeds from its manifest JSON.
-
-        Args:
-            project: DBTProject instance (or None)
-            include: iterable of resource types to show (subset of "model","source","seed")
-        """
-        super().__init__(**kwargs)
-        self.project = project
-        self.include = set(include)
-        self.show_root = False
-        self.guide = 2
-
-    def on_mount(self):
-        self.populate()
-
-    def populate(self):
-        # Clear any existing root children if re-populating
-        try:
-            # textual Tree API supports clearing the whole tree from root
-            self.clear()
-        except Exception:
-            pass
-
-        if not self.project:
-            return
-
-        manifest = self.project.get_manifest_json("all") or {}
-        nodes = manifest.get("nodes", {})
-        sources = manifest.get("sources", {})
-
-        if "model" in self.include:
-            model_nodes = {
-                uid: node
-                for uid, node in nodes.items()
-                if node.get("resource_type") == "model"
-            }
-            model_tree = self.root.add(
-                f"Models ({len(model_nodes)})", expand=len(model_nodes) > 0
-            )
-            # nodes is {uid: node_dict}
-            for uid, node in sorted(
-                model_nodes.items(), key=lambda kv: kv[1].get("name", kv[0])
-            ):
-                display_name = node.get("name", uid)
-                model_tree.add_leaf(display_name, data=node)
-
-        if "source" in self.include:
-            source_tree = self.root.add(
-                f"Sources ({len(sources)})", expand=len(sources) > 0
-            )
-            for uid, src in sorted(
-                sources.items(), key=lambda kv: kv[1].get("name", kv[0])
-            ):
-                display_name = src.get("name", uid)
-                source_tree.add_leaf(display_name, data=src)
-
-        if "seed" in self.include:
-            seed_nodes = {
-                uid: node
-                for uid, node in nodes.items()
-                if node.get("resource_type") == "seed"
-            }
-            seed_tree = self.root.add(
-                f"Seeds ({len(seed_nodes)})", expand=len(seed_nodes) > 0
-            )
-            for uid, node in sorted(
-                seed_nodes.items(), key=lambda kv: kv[1].get("name", kv[0])
-            ):
-                display_name = node.get("name", uid)
-                seed_tree.add_leaf(display_name, data=node)
+from textual.widgets import Footer, Header
 
 
 class DBTUI(App):
@@ -115,7 +40,7 @@ class DBTUI(App):
         sidebar = self.query_one("#sidebar")
         sidebar.border_title = "Projects"
 
-    def on_tree_node_selected(self, event: Tree.NodeSelected) -> None:
+    def on_tree_node_selected(self, event: SideBar.NodeSelected) -> None:
         details_widget = self.query_one("#node_details", NodeDetailsWidget)
         if event.node.data:
             details_widget.update_details(event.node.data)
