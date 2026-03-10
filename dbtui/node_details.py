@@ -2,47 +2,421 @@ from __future__ import annotations
 
 from typing import Any
 
-from textual.containers import VerticalScroll
-from textual.widgets import Label, Pretty
+from textual.containers import Horizontal, Vertical, VerticalScroll
+from textual.widgets import Collapsible, DataTable, Label, Rule, Static
+
+
+class _Badge(Static):
+    """Small inline badge for resource type."""
+
+    DEFAULT_CSS = """
+    _Badge {
+        background: $accent;
+        color: $text;
+        padding: 0 1;
+        text-style: bold;
+        width: auto;
+        height: 1;
+    }
+    """
+
+
+class _SectionTitle(Static):
+    """Styled section heading."""
+
+    DEFAULT_CSS = """
+    _SectionTitle {
+        text-style: bold;
+        color: $accent;
+        margin-top: 1;
+        margin-bottom: 0;
+        width: 100%;
+    }
+    """
+
+
+class _MetaKey(Static):
+    """Label for a metadata key."""
+
+    DEFAULT_CSS = """
+    _MetaKey {
+        color: $text-muted;
+        width: 18;
+        text-style: bold;
+    }
+    """
+
+
+class _MetaValue(Static):
+    """Label for a metadata value."""
+
+    DEFAULT_CSS = """
+    _MetaValue {
+        width: 1fr;
+    }
+    """
+
+
+class _MetaRow(Horizontal):
+    """A single key-value row in the metadata section."""
+
+    DEFAULT_CSS = """
+    _MetaRow {
+        height: 1;
+        width: 100%;
+    }
+    """
+
+    def __init__(self, key: str, value: str, row_id: str, **kwargs):
+        super().__init__(**kwargs)
+        self._key = key
+        self._value = value
+        self._row_id = row_id
+
+    def compose(self):
+        yield _MetaKey(f"  {self._key}")
+        yield _MetaValue(self._value, id=self._row_id)
+
+
+class _EmptyState(Static):
+    """Shown when no node is selected."""
+
+    DEFAULT_CSS = """
+    _EmptyState {
+        width: 100%;
+        height: 100%;
+        content-align: center middle;
+        text-align: center;
+        color: $text-muted;
+        text-style: italic;
+        padding-top: 3;
+    }
+    """
 
 
 class NodeDetailsWidget(VerticalScroll):
     """Details panel for the currently selected dbt node.
 
-    Keep mounted child widgets stable and only update their content.
-    This pattern is simple and easy to extend with additional sections.
+    Displays node information in clean, organised sections:
+      - Header with name and resource-type badge
+      - Metadata grid (database, schema, materialization, path, tags, etc.)
+      - Description
+      - Columns table
+      - Dependencies (parents / children)
+      - SQL code (raw and compiled) in collapsible sections
+    """
+
+    DEFAULT_CSS = """
+    NodeDetailsWidget {
+        padding: 1 2;
+    }
+
+    #nd-header {
+        width: 100%;
+        height: auto;
+    }
+
+    #nd-node-name {
+        text-style: bold;
+        width: 1fr;
+    }
+
+    #nd-header-row {
+        height: 1;
+        width: 100%;
+        margin-bottom: 0;
+    }
+
+    #nd-description-text {
+        color: $text;
+        margin-left: 2;
+        margin-bottom: 1;
+        width: 100%;
+    }
+
+    #nd-columns-table {
+        margin-left: 2;
+        margin-bottom: 1;
+        max-height: 20;
+        width: 100%;
+    }
+
+    #nd-depends-on-section {
+        margin-left: 2;
+        margin-bottom: 1;
+        width: 100%;
+    }
+
+    #nd-dependents-section {
+        margin-left: 2;
+        margin-bottom: 1;
+        width: 100%;
+    }
+
+    .nd-dep-item {
+        color: $text;
+        margin-left: 0;
+        height: 1;
+    }
+
+    .nd-sql-block {
+        padding: 1 2;
+        background: $surface;
+        margin-left: 2;
+        margin-bottom: 1;
+        width: 100%;
+        overflow-x: auto;
+    }
     """
 
     def __init__(self, node_details: dict[str, Any] | None = None, **kwargs):
         super().__init__(**kwargs)
         self._node_details: dict[str, Any] = node_details or {}
 
-    def compose(self):
-        yield Label("Node Details", id="node_details_title")
-        yield Label("", id="node_details_summary")
-        yield Pretty(self._node_details, id="node_details_pretty")
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
 
-    def _format_value(self, value: Any) -> str:
-        if value is None or value == "":
-            return "N/A"
+    @staticmethod
+    def _fmt(value: Any) -> str:
+        """Format a value for display, returning 'N/A' for empty values."""
+        if value is None or value == "" or value == []:
+            return "—"
+        if isinstance(value, list):
+            return ", ".join(str(v) for v in value)
         return str(value)
 
-    def _build_summary(self, details: dict[str, Any]) -> str:
-        resource_type = self._format_value(details.get("resource_type"))
-        name = self._format_value(details.get("name"))
-        path = self._format_value(
-            details.get("original_file_path") or details.get("path")
+    @staticmethod
+    def _resource_label(resource_type: str) -> str:
+        return resource_type.upper() if resource_type else "UNKNOWN"
+
+    def _get_materialized(self, details: dict[str, Any]) -> str:
+        config = details.get("config") or {}
+        mat = config.get("materialized") or config.get("materialization")
+        return self._fmt(mat)
+
+    def _get_tags(self, details: dict[str, Any]) -> str:
+        tags = details.get("tags")
+        return self._fmt(tags)
+
+    def _get_columns(self, details: dict[str, Any]) -> list[dict[str, Any]]:
+        """Return a list of column dicts from the node details."""
+        raw = details.get("columns") or {}
+        if isinstance(raw, dict):
+            return list(raw.values())
+        if isinstance(raw, list):
+            return raw
+        return []
+
+    def _get_depends_on_nodes(self, details: dict[str, Any]) -> list[str]:
+        dep = details.get("depends_on") or {}
+        nodes = dep.get("nodes") or []
+        return [str(n) for n in nodes] if nodes else []
+
+    def _get_children(self, details: dict[str, Any]) -> list[str]:
+        return [str(c) for c in (details.get("child_ids") or [])]
+
+    def _get_sql(self, details: dict[str, Any], kind: str = "raw") -> str:
+        """Get SQL code from node. kind is 'raw' or 'compiled'."""
+        if kind == "raw":
+            return details.get("raw_code") or details.get("raw_sql") or ""
+        return details.get("compiled_code") or details.get("compiled_sql") or ""
+
+    # ------------------------------------------------------------------
+    # Compose
+    # ------------------------------------------------------------------
+
+    def compose(self):
+        # Empty state (shown until a node is selected)
+        yield _EmptyState(
+            "Select a node from the sidebar to view details", id="nd-empty"
         )
-        return f"Type: {resource_type} | Name: {name} | Path: {path}"
+
+        # All detail sections live inside a hidden container
+        with Vertical(id="nd-content"):
+            # -- Header --
+            with Horizontal(id="nd-header-row"):
+                yield Label("", id="nd-node-name")
+                yield _Badge("", id="nd-badge")
+
+            yield Rule(line_style="heavy")
+
+            # -- Metadata --
+            yield _SectionTitle("ℹ  Metadata")
+            yield _MetaRow("Database", "—", "nd-meta-database")
+            yield _MetaRow("Schema", "—", "nd-meta-schema")
+            yield _MetaRow("Materialized", "—", "nd-meta-materialized")
+            yield _MetaRow("Package", "—", "nd-meta-package")
+            yield _MetaRow("Path", "—", "nd-meta-path")
+            yield _MetaRow("Tags", "—", "nd-meta-tags")
+            yield _MetaRow("Unique ID", "—", "nd-meta-uid")
+
+            yield Rule()
+
+            # -- Description --
+            yield _SectionTitle("📝  Description")
+            yield Static("—", id="nd-description-text")
+
+            yield Rule()
+
+            # -- Columns --
+            yield _SectionTitle("🏛  Columns")
+            yield DataTable(id="nd-columns-table", show_cursor=False)
+
+            yield Rule()
+
+            # -- Dependencies --
+            yield _SectionTitle("⬆  Depends On")
+            yield Vertical(id="nd-depends-on-section")
+
+            yield _SectionTitle("⬇  Referenced By")
+            yield Vertical(id="nd-dependents-section")
+
+            yield Rule()
+
+            # -- SQL --
+            with Collapsible(
+                title="Raw SQL", collapsed=True, id="nd-raw-sql-collapsible"
+            ):
+                yield Static("", id="nd-raw-sql", classes="nd-sql-block")
+
+            with Collapsible(
+                title="Compiled SQL", collapsed=True, id="nd-compiled-sql-collapsible"
+            ):
+                yield Static("", id="nd-compiled-sql", classes="nd-sql-block")
+
+    def on_mount(self):
+        # Set up columns table headers
+        table = self.query_one("#nd-columns-table", DataTable)
+        table.add_columns("Column", "Type", "Description")
+
+        # Hide content initially, show empty state
+        self.query_one("#nd-content").display = False
+
+        # If we already have details, render them
+        if self._node_details:
+            self._refresh_content(self._node_details)
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
 
     def update_details(self, node_details: dict[str, Any] | None) -> None:
         self._node_details = node_details or {}
-
-        summary = self.query_one("#node_details_summary", Label)
-        summary.update(self._build_summary(self._node_details))
-
-        pretty = self.query_one("#node_details_pretty", Pretty)
-        pretty.update(self._node_details)
+        self._refresh_content(self._node_details)
 
     def clear_details(self) -> None:
         self.update_details({})
+
+    # ------------------------------------------------------------------
+    # Rendering
+    # ------------------------------------------------------------------
+
+    def _refresh_content(self, details: dict[str, Any]) -> None:
+        """Re-render every section to reflect *details*."""
+        has_data = bool(details)
+
+        # Toggle empty state vs content
+        self.query_one("#nd-empty").display = not has_data
+        self.query_one("#nd-content").display = has_data
+
+        if not has_data:
+            return
+
+        # -- Header --
+        name = details.get("name") or details.get("unique_id") or "Unnamed"
+        resource_type = details.get("resource_type") or "unknown"
+
+        self.query_one("#nd-node-name", Label).update(f"  {name}")
+        badge = self.query_one("#nd-badge", _Badge)
+        badge.update(f" {self._resource_label(resource_type)} ")
+
+        # -- Metadata rows --
+        self.query_one("#nd-meta-database", _MetaValue).update(
+            self._fmt(details.get("database"))
+        )
+        self.query_one("#nd-meta-schema", _MetaValue).update(
+            self._fmt(details.get("schema"))
+        )
+        self.query_one("#nd-meta-materialized", _MetaValue).update(
+            self._get_materialized(details)
+        )
+        self.query_one("#nd-meta-package", _MetaValue).update(
+            self._fmt(details.get("package_name"))
+        )
+        self.query_one("#nd-meta-path", _MetaValue).update(
+            self._fmt(details.get("original_file_path") or details.get("path"))
+        )
+        self.query_one("#nd-meta-tags", _MetaValue).update(self._get_tags(details))
+        self.query_one("#nd-meta-uid", _MetaValue).update(
+            self._fmt(details.get("unique_id"))
+        )
+
+        # -- Description --
+        desc = details.get("description") or "—"
+        self.query_one("#nd-description-text", Static).update(desc)
+
+        # -- Columns table --
+        table = self.query_one("#nd-columns-table", DataTable)
+        table.clear()
+        columns = self._get_columns(details)
+        if columns:
+            for col in columns:
+                col_name = col.get("name", "—") if isinstance(col, dict) else str(col)
+                col_type = (
+                    col.get("data_type") or col.get("dtype") or col.get("type", "—")
+                    if isinstance(col, dict)
+                    else "—"
+                )
+                col_desc = col.get("description", "—") if isinstance(col, dict) else "—"
+                table.add_row(
+                    str(col_name),
+                    str(col_type) if col_type else "—",
+                    str(col_desc) if col_desc else "—",
+                )
+            table.display = True
+        else:
+            table.display = False
+
+        # -- Depends On --
+        depends_container = self.query_one("#nd-depends-on-section", Vertical)
+        depends_container.remove_children()
+        parents = self._get_depends_on_nodes(details)
+        if parents:
+            for p in parents:
+                depends_container.mount(Label(f"  • {p}", classes="nd-dep-item"))
+        else:
+            depends_container.mount(Label("  —", classes="nd-dep-item"))
+
+        # -- Referenced By --
+        children_container = self.query_one("#nd-dependents-section", Vertical)
+        children_container.remove_children()
+        children = self._get_children(details)
+        if children:
+            for c in children:
+                children_container.mount(Label(f"  • {c}", classes="nd-dep-item"))
+        else:
+            children_container.mount(Label("  —", classes="nd-dep-item"))
+
+        # -- SQL --
+        raw_sql = self._get_sql(details, "raw")
+        compiled_sql = self._get_sql(details, "compiled")
+
+        raw_collapsible = self.query_one("#nd-raw-sql-collapsible", Collapsible)
+        compiled_collapsible = self.query_one(
+            "#nd-compiled-sql-collapsible", Collapsible
+        )
+
+        if raw_sql.strip():
+            self.query_one("#nd-raw-sql", Static).update(raw_sql)
+            raw_collapsible.display = True
+        else:
+            raw_collapsible.display = False
+
+        if compiled_sql.strip():
+            self.query_one("#nd-compiled-sql", Static).update(compiled_sql)
+            compiled_collapsible.display = True
+        else:
+            compiled_collapsible.display = False
+
+        self.scroll_home(animate=False)
