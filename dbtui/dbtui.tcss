@@ -3,14 +3,23 @@
     width: auto;
     height: 100%;
     padding: 1;
-    border: round green;
+    border: round gray;
+}
+
+#sidebar:focus-within {
+    border: round $accent;
+    border-title-color: $accent;
 }
 
 #node_details {
     height: 100%;
-    border: round green;
+    border: round gray;
     padding: 0;
     overflow-y: auto;
+}
+
+#node_details:focus-within {
+    border: round $accent;
 }
 
 /* ── Header ───────────────────────────────────────────────── */

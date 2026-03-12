@@ -162,6 +162,12 @@ class NodeDetailsWidget(VerticalScroll):
     # ------------------------------------------------------------------
 
     BINDINGS = [
+        # Vim-style scrolling
+        Binding("j", "scroll_down", "Scroll Down", show=False),
+        Binding("k", "scroll_up", "Scroll Up", show=False),
+        Binding("g", "scroll_home", "Top", show=False),
+        Binding("G", "scroll_end", "Bottom", show=False, key_display="G"),
+        # dbt commands
         Binding("b", "dbt_build", "Build", show=True),
         Binding(
             "B", "dbt_build_upstream", "Build +upstream", show=True, key_display="B"
