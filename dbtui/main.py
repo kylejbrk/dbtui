@@ -1,8 +1,9 @@
 import argparse
 
 from command_screen import CommandScreen
-from dbt import DBTCLI, DBTProject
+from dbt import DBTCLI, DBTCommand, DBTProject
 from node_details import NodeDetailsWidget
+from show_screen import ShowScreen
 from sidebar import SideBar
 from textual.app import App
 from textual.containers import Horizontal
@@ -59,12 +60,19 @@ class DBTUI(App):
             )
             return
 
-        screen = CommandScreen(
-            cli=self.cli,
-            command=event.command,
-            node_name=event.node_name,
-            project_path=self.project.project_path,
-        )
+        if event.command == DBTCommand.SHOW:
+            screen = ShowScreen(
+                cli=self.cli,
+                node_name=event.node_name,
+                project_path=self.project.project_path,
+            )
+        else:
+            screen = CommandScreen(
+                cli=self.cli,
+                command=event.command,
+                node_name=event.node_name,
+                project_path=self.project.project_path,
+            )
         self.push_screen(screen)
 
 

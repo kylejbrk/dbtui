@@ -130,6 +130,7 @@ class NodeDetailsWidget(VerticalScroll):
         c — Compile
         r — Run
         t — Test
+        s — Show (preview query results)
     """
 
     # ------------------------------------------------------------------
@@ -170,6 +171,7 @@ class NodeDetailsWidget(VerticalScroll):
         Binding("c", "dbt_compile", "Compile", show=True),
         Binding("r", "dbt_run", "Run", show=True),
         Binding("t", "dbt_test", "Test", show=True),
+        Binding("s", "dbt_show", "Show", show=True),
     ]
 
     DEFAULT_CSS = """
@@ -438,6 +440,9 @@ class NodeDetailsWidget(VerticalScroll):
     def action_dbt_test(self) -> None:
         self._post_command(DBTCommand.TEST)
 
+    def action_dbt_show(self) -> None:
+        self._post_command(DBTCommand.SHOW)
+
     # ------------------------------------------------------------------
     # Rendering
     # ------------------------------------------------------------------
@@ -469,6 +474,7 @@ class NodeDetailsWidget(VerticalScroll):
             DBTCommand.COMPILE: "c",
             DBTCommand.RUN: "r",
             DBTCommand.TEST: "t",
+            DBTCommand.SHOW: "s",
         }
         hints = "  ".join(
             f"[bold]{_key_map.get(c, '?')}[/bold]={c.display_name}" for c in cmds

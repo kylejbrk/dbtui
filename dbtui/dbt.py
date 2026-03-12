@@ -73,6 +73,7 @@ class DBTCommand(Enum):
     COMPILE = "compile"
     TEST = "test"
     RUN = "run"
+    SHOW = "show"
 
     @property
     def display_name(self) -> str:
@@ -85,6 +86,7 @@ class DBTCommand(Enum):
             DBTCommand.COMPILE: "Compile",
             DBTCommand.TEST: "Test",
             DBTCommand.RUN: "Run",
+            DBTCommand.SHOW: "Show",
         }
         return _labels.get(self, self.value)
 
@@ -111,6 +113,16 @@ class DBTCommand(Enum):
             return ["test", "--select", node_name]
         if self == DBTCommand.RUN:
             return ["run", "--select", node_name]
+        if self == DBTCommand.SHOW:
+            return [
+                "show",
+                "--select",
+                node_name,
+                "--output",
+                "json",
+                "--log-format",
+                "json",
+            ]
         # Defensive fallback
         return ["build", "--select", node_name]
 
@@ -133,9 +145,10 @@ class DBTCommand(Enum):
                 cls.COMPILE,
                 cls.RUN,
                 cls.TEST,
+                cls.SHOW,
             ]
         if resource_type == "seed":
-            return [cls.BUILD, cls.TEST]
+            return [cls.BUILD, cls.TEST, cls.SHOW]
         if resource_type == "source":
             return [cls.TEST]
         # Default: offer build and compile
