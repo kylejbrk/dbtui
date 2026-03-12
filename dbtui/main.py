@@ -18,6 +18,7 @@ class DBTUI(App):
         Binding("ctrl+h", "focus_sidebar", "Focus Sidebar", show=False),
         Binding("ctrl+l", "focus_details", "Focus Details", show=False),
         Binding("tab", "toggle_pane", "Toggle Pane", show=False),
+        Binding("a", "toggle_sidebar", "Toggle Sidebar", show=False),
     ]
 
     def __init__(self, project_path=None, dbt_path=None):
@@ -67,6 +68,17 @@ class DBTUI(App):
         if sidebar.has_focus or sidebar.has_focus_within:
             details.focus()
         else:
+            sidebar.focus()
+
+    def action_toggle_sidebar(self) -> None:
+        """Toggle the sidebar visibility (a)."""
+        sidebar = self.query_one("#sidebar", SideBar)
+        sidebar.display = not sidebar.display
+        if not sidebar.display:
+            # Sidebar hidden — move focus to details
+            self.query_one("#node_details", NodeDetailsWidget).focus()
+        else:
+            # Sidebar shown — move focus to it
             sidebar.focus()
 
     # ------------------------------------------------------------------
