@@ -312,3 +312,58 @@ ShowScreen {
     text-style: bold;
     padding: 0 1;
 }
+
+/* ── Project Modal (add / edit) ───────────────────────────── */
+
+ProjectModal {
+    align: center middle;
+}
+
+#project-modal-dialog {
+    width: 70;
+    height: auto;
+    max-height: 24;
+    border: thick $accent;
+    background: $surface;
+    padding: 1 2;
+}
+
+#project-modal-title {
+    text-style: bold;
+    width: 100%;
+    content-align: center middle;
+    text-align: center;
+    margin-bottom: 1;
+}
+
+.project-modal-label {
+    margin-top: 1;
+    margin-bottom: 0;
+    color: $text;
+    text-style: bold;
+}
+
+.project-modal-hint {
+    color: $text-muted;
+    text-style: italic;
+    margin-bottom: 0;
+}
+
+#project-modal-error {
+    color: $error;
+    text-style: bold;
+    margin-top: 1;
+    height: auto;
+    display: none;
+}
+
+#project-modal-buttons {
+    margin-top: 1;
+    width: 100%;
+    height: auto;
+    align: center middle;
+}
+
+#project-modal-buttons Button {
+    margin: 0 1;
+}
