@@ -1,5 +1,6 @@
 import argparse
 
+from command_screen import CommandScreen
 from dbt import DBTCLI, DBTProject
 from node_details import NodeDetailsWidget
 from sidebar import SideBar
@@ -46,6 +47,25 @@ class DBTUI(App):
             details_widget.update_details(event.node.data)
         else:
             details_widget.update_details({})
+
+    def on_node_details_widget_command_requested(
+        self, event: NodeDetailsWidget.CommandRequested
+    ) -> None:
+        """Handle a dbt command request from the node details panel."""
+        if not self.cli.available():
+            self.notify(
+                "dbt binary not found. Install dbt or pass --dbt-path.",
+                severity="error",
+            )
+            return
+
+        screen = CommandScreen(
+            cli=self.cli,
+            command=event.command,
+            node_name=event.node_name,
+            project_path=self.project.project_path,
+        )
+        self.push_screen(screen)
 
 
 if __name__ == "__main__":

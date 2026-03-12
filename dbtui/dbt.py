@@ -21,22 +21,28 @@ Example:
     # run `dbt compile`
     result = cli.run(["compile"], cwd=project.project_path, timeout=30_000)
     print(result.returncode, result.stdout)
+
+    # async run with streaming (for TUI integration)
+    async for event in cli.run_async(["build", "-s", "my_model"], cwd=project.project_path):
+        print(event)  # DBTStreamEvent with .stream ("stdout"/"stderr"/"status") and .text
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import shutil
 import subprocess
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, AsyncIterator, Dict, List, Optional, Union
 
 import yaml
 from dbt_artifacts_parser.parser import parse_manifest
 
-__all__ = ["DBTCLI", "DBTProject", "DBTManifest"]
+__all__ = ["DBTCLI", "DBTProject", "DBTManifest", "DBTCommand", "DBTStreamEvent"]
 
 
 @dataclass
@@ -57,6 +63,99 @@ class DBTRunResult:
     command: List[str]
 
 
+class DBTCommand(Enum):
+    """Supported dbt commands that can be run against a selected node."""
+
+    BUILD = "build"
+    BUILD_UPSTREAM = "build_upstream"
+    BUILD_DOWNSTREAM = "build_downstream"
+    BUILD_FULL = "build_full"
+    COMPILE = "compile"
+    TEST = "test"
+    RUN = "run"
+
+    @property
+    def display_name(self) -> str:
+        """Human-readable label for the command."""
+        _labels = {
+            DBTCommand.BUILD: "Build",
+            DBTCommand.BUILD_UPSTREAM: "Build +upstream",
+            DBTCommand.BUILD_DOWNSTREAM: "Build downstream+",
+            DBTCommand.BUILD_FULL: "Build +full+",
+            DBTCommand.COMPILE: "Compile",
+            DBTCommand.TEST: "Test",
+            DBTCommand.RUN: "Run",
+        }
+        return _labels.get(self, self.value)
+
+    def to_args(self, node_name: str) -> List[str]:
+        """Convert command + node name into a list of dbt CLI arguments.
+
+        Args:
+            node_name: The dbt node name (e.g. ``"my_model"``).
+
+        Returns:
+            A list of strings suitable for passing to ``DBTCLI.run``.
+        """
+        if self == DBTCommand.BUILD:
+            return ["build", "--select", node_name]
+        if self == DBTCommand.BUILD_UPSTREAM:
+            return ["build", "--select", f"+{node_name}"]
+        if self == DBTCommand.BUILD_DOWNSTREAM:
+            return ["build", "--select", f"{node_name}+"]
+        if self == DBTCommand.BUILD_FULL:
+            return ["build", "--select", f"+{node_name}+"]
+        if self == DBTCommand.COMPILE:
+            return ["compile", "--select", node_name]
+        if self == DBTCommand.TEST:
+            return ["test", "--select", node_name]
+        if self == DBTCommand.RUN:
+            return ["run", "--select", node_name]
+        # Defensive fallback
+        return ["build", "--select", node_name]
+
+    @classmethod
+    def for_resource_type(cls, resource_type: str) -> List["DBTCommand"]:
+        """Return the list of applicable commands for a given dbt resource type.
+
+        Args:
+            resource_type: One of ``"model"``, ``"seed"``, ``"source"``, etc.
+
+        Returns:
+            Ordered list of ``DBTCommand`` members that make sense for the type.
+        """
+        if resource_type == "model":
+            return [
+                cls.BUILD,
+                cls.BUILD_UPSTREAM,
+                cls.BUILD_DOWNSTREAM,
+                cls.BUILD_FULL,
+                cls.COMPILE,
+                cls.RUN,
+                cls.TEST,
+            ]
+        if resource_type == "seed":
+            return [cls.BUILD, cls.TEST]
+        if resource_type == "source":
+            return [cls.TEST]
+        # Default: offer build and compile
+        return [cls.BUILD, cls.COMPILE]
+
+
+@dataclass
+class DBTStreamEvent:
+    """A single event emitted during async dbt command execution.
+
+    Attributes:
+        stream: One of ``"stdout"``, ``"stderr"``, or ``"status"``.
+                ``"status"`` is used for lifecycle messages (started / finished / error).
+        text: The line of text.
+    """
+
+    stream: str  # "stdout" | "stderr" | "status"
+    text: str
+
+
 class DBTCLI:
     """
     Wrapper for invoking the `dbt` command-line binary.
@@ -66,12 +165,15 @@ class DBTCLI:
 
     Methods:
         run(args, cwd=None, env=None, timeout=None, capture_output=True):
-            Run the dbt command with the provided arguments.
+            Run the dbt command with the provided arguments (synchronous).
+        run_async(args, cwd=None, env=None):
+            Run a dbt command asynchronously, yielding DBTStreamEvent objects
+            as stdout/stderr lines arrive.  Ideal for TUI integration.
     """
 
     def __init__(self, path: Optional[str] = None) -> None:
         if path:
-            self.path = path
+            self.path = str(Path(path).resolve())
         else:
             self.path = shutil.which("dbt")
 
@@ -90,7 +192,7 @@ class DBTCLI:
         capture_output: bool = True,
     ) -> DBTRunResult:
         """
-        Run a dbt CLI command.
+        Run a dbt CLI command (synchronous / blocking).
 
         Args:
             args: list of CLI arguments (e.g. ["compile", "--models", "my_model"])
@@ -132,6 +234,95 @@ class DBTCLI:
         return DBTRunResult(
             returncode=completed.returncode, stdout=stdout, stderr=stderr, command=cmd
         )
+
+    async def run_async(
+        self,
+        args: List[str],
+        cwd: Optional[Union[str, os.PathLike[str]]] = None,
+        env: Optional[Dict[str, str]] = None,
+    ) -> AsyncIterator[DBTStreamEvent]:
+        """Run a dbt CLI command asynchronously, streaming output line-by-line.
+
+        Yields ``DBTStreamEvent`` objects as lines are produced:
+          - ``stream="status"`` for lifecycle messages (command started / finished).
+          - ``stream="stdout"`` for each stdout line.
+          - ``stream="stderr"`` for each stderr line.
+
+        This is designed for consumption by a Textual worker so the TUI stays
+        responsive while the command executes.
+
+        Args:
+            args: CLI arguments (e.g. ``["build", "--select", "my_model"]``).
+            cwd: Working directory.
+            env: Extra environment variables.
+
+        Yields:
+            DBTStreamEvent instances.
+
+        Raises:
+            FileNotFoundError: if the dbt binary cannot be located.
+        """
+        if not self.available():
+            raise FileNotFoundError(
+                "dbt binary not found. Please install dbt or provide a path to DBTCLI."
+            )
+
+        assert self.path is not None
+        cmd = [self.path] + list(args)
+        run_env = os.environ.copy()
+        if env:
+            run_env.update(env)
+
+        cmd_str = " ".join(cmd)
+        yield DBTStreamEvent(stream="status", text=f"▶ Running: {cmd_str}")
+
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            cwd=cwd,
+            env=run_env,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+
+        async def _read_stream(
+            stream: asyncio.StreamReader, name: str
+        ) -> List[DBTStreamEvent]:
+            events: List[DBTStreamEvent] = []
+            while True:
+                line_bytes = await stream.readline()
+                if not line_bytes:
+                    break
+                line = line_bytes.decode("utf-8", errors="replace").rstrip("\n\r")
+                events.append(DBTStreamEvent(stream=name, text=line))
+            return events
+
+        # Read stdout and stderr concurrently
+        stdout_task = asyncio.create_task(
+            _read_stream(process.stdout, "stdout")  # type: ignore[arg-type]
+        )
+        stderr_task = asyncio.create_task(
+            _read_stream(process.stderr, "stderr")  # type: ignore[arg-type]
+        )
+
+        stdout_events, stderr_events = await asyncio.gather(stdout_task, stderr_task)
+
+        # Yield all stdout events, then stderr events
+        for event in stdout_events:
+            yield event
+        for event in stderr_events:
+            yield event
+
+        returncode = await process.wait()
+
+        if returncode == 0:
+            yield DBTStreamEvent(
+                stream="status", text="✔ Command completed successfully (exit 0)"
+            )
+        else:
+            yield DBTStreamEvent(
+                stream="status",
+                text=f"✘ Command failed (exit {returncode})",
+            )
 
 
 class DBTManifest:

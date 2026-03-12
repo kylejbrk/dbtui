@@ -136,3 +136,101 @@ _EmptyState {
     width: 100%;
     height: auto;
 }
+
+/* ── Commands section ─────────────────────────────────────── */
+
+#nd-commands-section {
+    width: 100%;
+    height: auto;
+    padding: 0 2;
+    color: $text-muted;
+}
+
+/* ── Command Screen (modal) ───────────────────────────────── */
+
+CommandScreen {
+    align: center middle;
+}
+
+#cmd-dialog {
+    width: 90%;
+    height: 85%;
+    border: thick $accent;
+    background: $surface;
+    padding: 0;
+}
+
+#cmd-header {
+    width: 100%;
+    height: auto;
+    padding: 1 2;
+    background: $surface;
+    text-style: bold;
+    color: $text;
+}
+
+#cmd-command-line {
+    width: 100%;
+    height: 1;
+    padding: 0 2;
+    color: $text-muted;
+    text-style: italic;
+}
+
+#cmd-log-scroll {
+    width: 100%;
+    height: 1fr;
+    background: $panel;
+    padding: 0;
+}
+
+#cmd-footer-hint {
+    width: 100%;
+    height: 1;
+    dock: bottom;
+    background: $accent;
+    color: $text;
+    text-align: center;
+    text-style: bold;
+    padding: 0 1;
+}
+
+_StatusBadge {
+    width: auto;
+    height: 1;
+    padding: 0 1;
+    text-style: bold;
+    margin-bottom: 1;
+    margin-left: 2;
+}
+
+_StatusBadge.running {
+    background: $warning;
+    color: $text;
+}
+
+_StatusBadge.success {
+    background: $success;
+    color: $text;
+}
+
+_StatusBadge.error {
+    background: $error;
+    color: $text;
+}
+
+_LogLine {
+    width: 100%;
+    height: auto;
+    padding: 0 2;
+    color: $text;
+}
+
+_LogLine.stderr {
+    color: $error;
+}
+
+_LogLine.status-line {
+    color: $accent;
+    text-style: italic;
+}

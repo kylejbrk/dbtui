@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from dbt import DBTCommand
+from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
+from textual.message import Message
 from textual.widgets import Collapsible, DataTable, Label, Rule, Static
 
 
@@ -94,17 +97,80 @@ class _EmptyState(Static):
     """
 
 
+class _CommandHint(Static):
+    """Displays available command key bindings for the selected node."""
+
+    DEFAULT_CSS = """
+    _CommandHint {
+        width: 100%;
+        height: auto;
+        padding: 0 2;
+        color: $text-muted;
+    }
+    """
+
+
 class NodeDetailsWidget(VerticalScroll):
     """Details panel for the currently selected dbt node.
 
     Displays node information in clean, organised sections:
       - Header with name and resource-type badge
+      - Command shortcuts bar
       - Metadata grid (database, schema, materialization, path, tags, etc.)
       - Description
       - Columns table
       - Dependencies (parents / children)
       - SQL code (raw and compiled) in collapsible sections
+
+    Key bindings (active when a node is selected):
+        b — Build the selected node
+        B — Build +upstream
+        d — Build downstream+
+        F — Build +full+
+        c — Compile
+        r — Run
+        t — Test
     """
+
+    # ------------------------------------------------------------------
+    # Messages
+    # ------------------------------------------------------------------
+
+    class CommandRequested(Message):
+        """Posted when the user triggers a dbt command on the current node.
+
+        Attributes:
+            command: The ``DBTCommand`` enum member.
+            node_name: The name of the selected dbt node.
+            node_details: The full node dict for context.
+        """
+
+        def __init__(
+            self,
+            command: DBTCommand,
+            node_name: str,
+            node_details: dict[str, Any],
+        ) -> None:
+            super().__init__()
+            self.command = command
+            self.node_name = node_name
+            self.node_details = node_details
+
+    # ------------------------------------------------------------------
+    # Bindings
+    # ------------------------------------------------------------------
+
+    BINDINGS = [
+        Binding("b", "dbt_build", "Build", show=True),
+        Binding(
+            "B", "dbt_build_upstream", "Build +upstream", show=True, key_display="B"
+        ),
+        Binding("d", "dbt_build_downstream", "Build downstream+", show=True),
+        Binding("F", "dbt_build_full", "Build +full+", show=True, key_display="F"),
+        Binding("c", "dbt_compile", "Compile", show=True),
+        Binding("r", "dbt_run", "Run", show=True),
+        Binding("t", "dbt_test", "Test", show=True),
+    ]
 
     DEFAULT_CSS = """
     NodeDetailsWidget {
@@ -124,6 +190,12 @@ class NodeDetailsWidget(VerticalScroll):
     #nd-header-row {
         height: 1;
         width: 100%;
+        margin-bottom: 0;
+    }
+
+    #nd-commands-section {
+        width: 100%;
+        height: auto;
         margin-bottom: 0;
     }
 
@@ -172,6 +244,7 @@ class NodeDetailsWidget(VerticalScroll):
     def __init__(self, node_details: dict[str, Any] | None = None, **kwargs):
         super().__init__(**kwargs)
         self._node_details: dict[str, Any] = node_details or {}
+        self._current_node_name: str | None = None
 
     # ------------------------------------------------------------------
     # Helpers
@@ -241,6 +314,12 @@ class NodeDetailsWidget(VerticalScroll):
 
             yield Rule(line_style="heavy")
 
+            # -- Commands --
+            yield _SectionTitle("🚀  Commands")
+            yield _CommandHint("", id="nd-commands-section")
+
+            yield Rule()
+
             # -- Metadata --
             yield _SectionTitle("ℹ  Metadata")
             yield _MetaRow("Database", "—", "nd-meta-database")
@@ -303,10 +382,61 @@ class NodeDetailsWidget(VerticalScroll):
 
     def update_details(self, node_details: dict[str, Any] | None) -> None:
         self._node_details = node_details or {}
+        self._current_node_name = (
+            self._node_details.get("name")
+            or self._node_details.get("unique_id")
+            or None
+        )
         self._refresh_content(self._node_details)
 
     def clear_details(self) -> None:
         self.update_details({})
+
+    # ------------------------------------------------------------------
+    # dbt command actions
+    # ------------------------------------------------------------------
+
+    def _post_command(self, command: DBTCommand) -> None:
+        """Post a ``CommandRequested`` message if a node is currently selected."""
+        if not self._node_details or not self._current_node_name:
+            self.notify("No node selected", severity="warning")
+            return
+        resource_type = self._node_details.get("resource_type", "")
+        available = DBTCommand.for_resource_type(resource_type)
+        if command not in available:
+            self.notify(
+                f"'{command.display_name}' is not available for {resource_type} nodes",
+                severity="warning",
+            )
+            return
+        self.post_message(
+            self.CommandRequested(
+                command=command,
+                node_name=self._current_node_name,
+                node_details=self._node_details,
+            )
+        )
+
+    def action_dbt_build(self) -> None:
+        self._post_command(DBTCommand.BUILD)
+
+    def action_dbt_build_upstream(self) -> None:
+        self._post_command(DBTCommand.BUILD_UPSTREAM)
+
+    def action_dbt_build_downstream(self) -> None:
+        self._post_command(DBTCommand.BUILD_DOWNSTREAM)
+
+    def action_dbt_build_full(self) -> None:
+        self._post_command(DBTCommand.BUILD_FULL)
+
+    def action_dbt_compile(self) -> None:
+        self._post_command(DBTCommand.COMPILE)
+
+    def action_dbt_run(self) -> None:
+        self._post_command(DBTCommand.RUN)
+
+    def action_dbt_test(self) -> None:
+        self._post_command(DBTCommand.TEST)
 
     # ------------------------------------------------------------------
     # Rendering
@@ -328,6 +458,22 @@ class NodeDetailsWidget(VerticalScroll):
         resource_type = details.get("resource_type") or "unknown"
 
         self.query_one("#nd-node-name", Label).update(f"  {name}")
+
+        # -- Commands hint --
+        cmds = DBTCommand.for_resource_type(resource_type)
+        _key_map = {
+            DBTCommand.BUILD: "b",
+            DBTCommand.BUILD_UPSTREAM: "B",
+            DBTCommand.BUILD_DOWNSTREAM: "d",
+            DBTCommand.BUILD_FULL: "F",
+            DBTCommand.COMPILE: "c",
+            DBTCommand.RUN: "r",
+            DBTCommand.TEST: "t",
+        }
+        hints = "  ".join(
+            f"[bold]{_key_map.get(c, '?')}[/bold]={c.display_name}" for c in cmds
+        )
+        self.query_one("#nd-commands-section", _CommandHint).update(f"  {hints}")
         badge = self.query_one("#nd-badge", _Badge)
         badge.update(f" {self._resource_label(resource_type)} ")
 
