@@ -10,7 +10,7 @@ Provides ``CommandScreen``, a Textual ``ModalScreen`` that:
 Usage (from within a Textual App)::
 
     from dbtui.command_screen import CommandScreen
-    from dbtui.dbt import DBTCLI, DBTCommand
+    from dbtui.dbt_client import DBTCLI, DBTCommand
 
     def action_build_node(self) -> None:
         screen = CommandScreen(
@@ -27,78 +27,16 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional, Union
 
-from dbt import DBTCLI, DBTCommand, DBTStreamEvent
+from rich.text import Text
 from textual import work
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import Vertical, VerticalScroll
+from textual.containers import Vertical
 from textual.screen import ModalScreen
-from textual.widgets import Label, Rule, Static
+from textual.widgets import Label, RichLog, Rule, Static
 
-
-class _CommandHeader(Static):
-    """Displays the command name and current execution status."""
-
-    DEFAULT_CSS = """
-    _CommandHeader {
-        width: 100%;
-        height: auto;
-        padding: 1 2;
-        background: $surface;
-        text-style: bold;
-        color: $text;
-    }
-    """
-
-
-class _StatusBadge(Static):
-    """Small badge showing running / success / error."""
-
-    DEFAULT_CSS = """
-    _StatusBadge {
-        width: auto;
-        height: 1;
-        padding: 0 1;
-        text-style: bold;
-        margin-bottom: 1;
-        margin-left: 2;
-    }
-    _StatusBadge.running {
-        background: $warning;
-        color: $text;
-    }
-    _StatusBadge.success {
-        background: $success;
-        color: $text;
-    }
-    _StatusBadge.error {
-        background: $error;
-        color: $text;
-    }
-    """
-
-
-class _LogLine(Static):
-    """A single line of command output."""
-
-    DEFAULT_CSS = """
-    _LogLine {
-        width: 100%;
-        height: auto;
-        padding: 0 2;
-        color: $text;
-    }
-    _LogLine.stderr {
-        color: $error;
-    }
-    _LogLine.status-line {
-        color: $accent;
-        text-style: italic;
-    }
-    """
-
-    def __init__(self, content: str, markup: bool = False, **kwargs):
-        super().__init__(content, markup=markup, **kwargs)
+from dbtui.dbt_client import DBTCLI, DBTCommand, DBTStreamEvent
+from dbtui.widgets import ScreenHeader, StatusBadge
 
 
 class CommandScreen(ModalScreen[Optional[int]]):
@@ -125,11 +63,11 @@ class CommandScreen(ModalScreen[Optional[int]]):
         padding: 0;
     }
 
-    #cmd-log-scroll {
+    #cmd-log {
         width: 100%;
         height: 1fr;
         background: $panel;
-        padding: 0;
+        padding: 0 2;
     }
 
     #cmd-footer-hint {
@@ -173,7 +111,7 @@ class CommandScreen(ModalScreen[Optional[int]]):
         with Vertical(id="cmd-dialog"):
             cmd_args = self.command.to_args(self.node_name)
             cmd_display = f"dbt {' '.join(cmd_args)}"
-            yield _CommandHeader(
+            yield ScreenHeader(
                 f"⚡ {self.command.display_name}  ─  [bold]{self.node_name}[/bold]",
                 id="cmd-header",
             )
@@ -181,9 +119,9 @@ class CommandScreen(ModalScreen[Optional[int]]):
                 f"  $ {cmd_display}",
                 id="cmd-command-line",
             )
-            yield _StatusBadge(" ⏳ RUNNING ", id="cmd-status", classes="running")
+            yield StatusBadge(" ⏳ RUNNING ", id="cmd-status", classes="running")
             yield Rule(line_style="heavy")
-            yield VerticalScroll(id="cmd-log-scroll")
+            yield RichLog(id="cmd-log", wrap=True, highlight=False, markup=False)
             yield Static(
                 " Press [bold]Esc[/bold] or [bold]q[/bold] to close ",
                 id="cmd-footer-hint",
@@ -197,7 +135,8 @@ class CommandScreen(ModalScreen[Optional[int]]):
     # ------------------------------------------------------------------
 
     def action_close_screen(self) -> None:
-        """Dismiss the screen, returning the exit code."""
+        """Cancel any running command and dismiss the screen."""
+        self.workers.cancel_group(self, "dbt_command")
         self.dismiss(self._exit_code)
 
     # ------------------------------------------------------------------
@@ -207,35 +146,26 @@ class CommandScreen(ModalScreen[Optional[int]]):
     @work(thread=False, exclusive=True, group="dbt_command")
     async def _run_command(self) -> None:
         """Execute the dbt command asynchronously and stream output to the log."""
-        log_scroll = self.query_one("#cmd-log-scroll", VerticalScroll)
+        log = self.query_one("#cmd-log", RichLog)
 
         try:
             args = self.command.to_args(self.node_name)
             async for event in self.cli.run_async(args, cwd=self.project_path):
-                self._append_log_line(log_scroll, event)
-                # Parse exit code from status messages
-                if event.stream == "status" and "exit" in event.text:
-                    if "exit 0" in event.text:
-                        self._exit_code = 0
-                    else:
-                        # Try to extract exit code
-                        try:
-                            code_str = event.text.rsplit("exit ", 1)[-1].rstrip(")")
-                            self._exit_code = int(code_str)
-                        except (ValueError, IndexError):
-                            self._exit_code = 1
+                self._append_log_line(log, event)
+                if event.exit_code is not None:
+                    self._exit_code = event.exit_code
 
         except FileNotFoundError as exc:
-            await log_scroll.mount(_LogLine(f"ERROR: {exc}", classes="stderr"))
+            log.write(Text(f"ERROR: {exc}", style="bold red"))
             self._exit_code = 127
 
         except Exception as exc:
-            await log_scroll.mount(_LogLine(f"ERROR: {exc}", classes="stderr"))
+            log.write(Text(f"ERROR: {exc}", style="bold red"))
             self._exit_code = 1
 
         # Update status badge
         self._finished = True
-        badge = self.query_one("#cmd-status", _StatusBadge)
+        badge = self.query_one("#cmd-status", StatusBadge)
         if self._exit_code == 0:
             badge.update(" ✔ SUCCESS ")
             badge.remove_class("running")
@@ -245,19 +175,11 @@ class CommandScreen(ModalScreen[Optional[int]]):
             badge.remove_class("running")
             badge.add_class("error")
 
-    def _append_log_line(
-        self, log_scroll: VerticalScroll, event: DBTStreamEvent
-    ) -> None:
-        """Mount a new log line widget and auto-scroll to bottom."""
+    def _append_log_line(self, log: RichLog, event: DBTStreamEvent) -> None:
+        """Append a line to the log widget."""
         if event.stream == "stderr":
-            css_class = "stderr"
+            log.write(Text(event.text, style="red"))
         elif event.stream == "status":
-            css_class = "status-line"
+            log.write(Text(event.text, style="italic cyan"))
         else:
-            css_class = ""
-
-        # Status lines are ours (safe markup); stdout/stderr come from dbt (no markup)
-        use_markup = event.stream == "status"
-        line = _LogLine(event.text, markup=use_markup, classes=css_class)
-        log_scroll.mount(line)
-        line.scroll_visible(animate=False)
+            log.write(event.text)

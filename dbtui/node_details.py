@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from dbt import DBTCommand
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.message import Message
 from textual.widgets import Collapsible, DataTable, Label, Rule, Static
+
+from dbtui.dbt_client import DBTCommand
 
 
 class _Badge(Static):
@@ -178,6 +179,7 @@ class NodeDetailsWidget(VerticalScroll):
         Binding("r", "dbt_run", "Run", show=True),
         Binding("t", "dbt_test", "Test", show=True),
         Binding("s", "dbt_show", "Show", show=True),
+        Binding("escape", "focus_sidebar", "Back to Sidebar", show=False),
     ]
 
     DEFAULT_CSS = """
@@ -425,6 +427,12 @@ class NodeDetailsWidget(VerticalScroll):
             )
         )
 
+    def action_focus_sidebar(self) -> None:
+        """Refocus the sidebar."""
+        sidebar = self.screen.query_one("#sidebar")
+        if sidebar:
+            sidebar.focus()
+
     def action_dbt_build(self) -> None:
         self._post_command(DBTCommand.BUILD)
 
@@ -464,117 +472,124 @@ class NodeDetailsWidget(VerticalScroll):
         if not has_data:
             return
 
-        # -- Header --
-        name = details.get("name") or details.get("unique_id") or "Unnamed"
-        resource_type = details.get("resource_type") or "unknown"
+        with self.app.batch_update():
+            # -- Header --
+            name = details.get("name") or details.get("unique_id") or "Unnamed"
+            resource_type = details.get("resource_type") or "unknown"
 
-        self.query_one("#nd-node-name", Label).update(f"  {name}")
+            self.query_one("#nd-node-name", Label).update(f"  {name}")
 
-        # -- Commands hint --
-        cmds = DBTCommand.for_resource_type(resource_type)
-        _key_map = {
-            DBTCommand.BUILD: "b",
-            DBTCommand.BUILD_UPSTREAM: "B",
-            DBTCommand.BUILD_DOWNSTREAM: "d",
-            DBTCommand.BUILD_FULL: "F",
-            DBTCommand.COMPILE: "c",
-            DBTCommand.RUN: "r",
-            DBTCommand.TEST: "t",
-            DBTCommand.SHOW: "s",
-        }
-        hints = "  ".join(
-            f"[bold]{_key_map.get(c, '?')}[/bold]={c.display_name}" for c in cmds
-        )
-        self.query_one("#nd-commands-section", _CommandHint).update(f"  {hints}")
-        badge = self.query_one("#nd-badge", _Badge)
-        badge.update(f" {self._resource_label(resource_type)} ")
+            # -- Commands hint --
+            cmds = DBTCommand.for_resource_type(resource_type)
+            _key_map = {
+                DBTCommand.BUILD: "b",
+                DBTCommand.BUILD_UPSTREAM: "B",
+                DBTCommand.BUILD_DOWNSTREAM: "d",
+                DBTCommand.BUILD_FULL: "F",
+                DBTCommand.COMPILE: "c",
+                DBTCommand.RUN: "r",
+                DBTCommand.TEST: "t",
+                DBTCommand.SHOW: "s",
+            }
+            hints = "  ".join(
+                f"[bold]{_key_map.get(c, '?')}[/bold]={c.display_name}" for c in cmds
+            )
+            self.query_one("#nd-commands-section", _CommandHint).update(f"  {hints}")
+            badge = self.query_one("#nd-badge", _Badge)
+            badge.update(f" {self._resource_label(resource_type)} ")
 
-        # -- Metadata rows --
-        self.query_one("#nd-meta-database", _MetaValue).update(
-            self._fmt(details.get("database"))
-        )
-        self.query_one("#nd-meta-schema", _MetaValue).update(
-            self._fmt(details.get("schema"))
-        )
-        self.query_one("#nd-meta-materialized", _MetaValue).update(
-            self._get_materialized(details)
-        )
-        self.query_one("#nd-meta-package", _MetaValue).update(
-            self._fmt(details.get("package_name"))
-        )
-        self.query_one("#nd-meta-path", _MetaValue).update(
-            self._fmt(details.get("original_file_path") or details.get("path"))
-        )
-        self.query_one("#nd-meta-tags", _MetaValue).update(self._get_tags(details))
-        self.query_one("#nd-meta-uid", _MetaValue).update(
-            self._fmt(details.get("unique_id"))
-        )
+            # -- Metadata rows --
+            self.query_one("#nd-meta-database", _MetaValue).update(
+                self._fmt(details.get("database"))
+            )
+            self.query_one("#nd-meta-schema", _MetaValue).update(
+                self._fmt(details.get("schema"))
+            )
+            self.query_one("#nd-meta-materialized", _MetaValue).update(
+                self._get_materialized(details)
+            )
+            self.query_one("#nd-meta-package", _MetaValue).update(
+                self._fmt(details.get("package_name"))
+            )
+            self.query_one("#nd-meta-path", _MetaValue).update(
+                self._fmt(details.get("original_file_path") or details.get("path"))
+            )
+            self.query_one("#nd-meta-tags", _MetaValue).update(self._get_tags(details))
+            self.query_one("#nd-meta-uid", _MetaValue).update(
+                self._fmt(details.get("unique_id"))
+            )
 
-        # -- Description --
-        desc = details.get("description") or "—"
-        self.query_one("#nd-description-text", Static).update(desc)
+            # -- Description --
+            desc = details.get("description") or "—"
+            self.query_one("#nd-description-text", Static).update(desc)
 
-        # -- Columns table --
-        table = self.query_one("#nd-columns-table", DataTable)
-        table.clear()
-        columns = self._get_columns(details)
-        if columns:
-            for col in columns:
-                col_name = col.get("name", "—") if isinstance(col, dict) else str(col)
-                col_type = (
-                    col.get("data_type") or col.get("dtype") or col.get("type", "—")
-                    if isinstance(col, dict)
-                    else "—"
+            # -- Columns table --
+            table = self.query_one("#nd-columns-table", DataTable)
+            table.clear()
+            columns = self._get_columns(details)
+            if columns:
+                for col in columns:
+                    col_name = (
+                        col.get("name", "—") if isinstance(col, dict) else str(col)
+                    )
+                    col_type = (
+                        col.get("data_type") or col.get("dtype") or col.get("type", "—")
+                        if isinstance(col, dict)
+                        else "—"
+                    )
+                    col_desc = (
+                        col.get("description", "—") if isinstance(col, dict) else "—"
+                    )
+                    table.add_row(
+                        str(col_name),
+                        str(col_type) if col_type else "—",
+                        str(col_desc) if col_desc else "—",
+                    )
+                table.display = True
+            else:
+                table.display = False
+
+            # -- Depends On --
+            depends_container = self.query_one("#nd-depends-on-section", Vertical)
+            depends_container.remove_children()
+            parents = self._get_depends_on_nodes(details)
+            if parents:
+                depends_container.mount_all(
+                    [Label(f"  • {p}", classes="nd-dep-item") for p in parents]
                 )
-                col_desc = col.get("description", "—") if isinstance(col, dict) else "—"
-                table.add_row(
-                    str(col_name),
-                    str(col_type) if col_type else "—",
-                    str(col_desc) if col_desc else "—",
+            else:
+                depends_container.mount(Label("  —", classes="nd-dep-item"))
+
+            # -- Referenced By --
+            children_container = self.query_one("#nd-dependents-section", Vertical)
+            children_container.remove_children()
+            children = self._get_children(details)
+            if children:
+                children_container.mount_all(
+                    [Label(f"  • {c}", classes="nd-dep-item") for c in children]
                 )
-            table.display = True
-        else:
-            table.display = False
+            else:
+                children_container.mount(Label("  —", classes="nd-dep-item"))
 
-        # -- Depends On --
-        depends_container = self.query_one("#nd-depends-on-section", Vertical)
-        depends_container.remove_children()
-        parents = self._get_depends_on_nodes(details)
-        if parents:
-            for p in parents:
-                depends_container.mount(Label(f"  • {p}", classes="nd-dep-item"))
-        else:
-            depends_container.mount(Label("  —", classes="nd-dep-item"))
+            # -- SQL --
+            raw_sql = self._get_sql(details, "raw")
+            compiled_sql = self._get_sql(details, "compiled")
 
-        # -- Referenced By --
-        children_container = self.query_one("#nd-dependents-section", Vertical)
-        children_container.remove_children()
-        children = self._get_children(details)
-        if children:
-            for c in children:
-                children_container.mount(Label(f"  • {c}", classes="nd-dep-item"))
-        else:
-            children_container.mount(Label("  —", classes="nd-dep-item"))
+            raw_collapsible = self.query_one("#nd-raw-sql-collapsible", Collapsible)
+            compiled_collapsible = self.query_one(
+                "#nd-compiled-sql-collapsible", Collapsible
+            )
 
-        # -- SQL --
-        raw_sql = self._get_sql(details, "raw")
-        compiled_sql = self._get_sql(details, "compiled")
+            if raw_sql.strip():
+                self.query_one("#nd-raw-sql", Static).update(raw_sql)
+                raw_collapsible.display = True
+            else:
+                raw_collapsible.display = False
 
-        raw_collapsible = self.query_one("#nd-raw-sql-collapsible", Collapsible)
-        compiled_collapsible = self.query_one(
-            "#nd-compiled-sql-collapsible", Collapsible
-        )
+            if compiled_sql.strip():
+                self.query_one("#nd-compiled-sql", Static).update(compiled_sql)
+                compiled_collapsible.display = True
+            else:
+                compiled_collapsible.display = False
 
-        if raw_sql.strip():
-            self.query_one("#nd-raw-sql", Static).update(raw_sql)
-            raw_collapsible.display = True
-        else:
-            raw_collapsible.display = False
-
-        if compiled_sql.strip():
-            self.query_one("#nd-compiled-sql", Static).update(compiled_sql)
-            compiled_collapsible.display = True
-        else:
-            compiled_collapsible.display = False
-
-        self.scroll_home(animate=False)
+            self.scroll_home(animate=False)

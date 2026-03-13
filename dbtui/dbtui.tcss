@@ -1,3 +1,12 @@
+/* ══════════════════════════════════════════════════════════════
+   dbtui – main stylesheet
+
+   Widget-level defaults are in each widget's DEFAULT_CSS.
+   This file handles layout, composition, and overrides only.
+   ══════════════════════════════════════════════════════════════ */
+
+/* ── Layout ───────────────────────────────────────────────── */
+
 #sidebar {
     dock: left;
     width: auto;
@@ -22,7 +31,7 @@
     border: round $accent;
 }
 
-/* ── Header ───────────────────────────────────────────────── */
+/* ── Node Details sections ────────────────────────────────── */
 
 #nd-header-row {
     height: 1;
@@ -35,46 +44,6 @@
     width: 1fr;
 }
 
-/* ── Metadata grid ────────────────────────────────────────── */
-
-_MetaRow {
-    height: 1;
-    width: 100%;
-}
-
-_MetaKey {
-    color: $text-muted;
-    text-style: bold;
-    width: 18;
-}
-
-_MetaValue {
-    width: 1fr;
-}
-
-/* ── Badge ────────────────────────────────────────────────── */
-
-_Badge {
-    background: $accent;
-    color: $text;
-    padding: 0 1;
-    text-style: bold;
-    width: auto;
-    height: 1;
-}
-
-/* ── Section titles ───────────────────────────────────────── */
-
-_SectionTitle {
-    text-style: bold;
-    color: $accent;
-    margin-top: 1;
-    margin-bottom: 0;
-    width: 100%;
-}
-
-/* ── Description ──────────────────────────────────────────── */
-
 #nd-description-text {
     color: $text;
     margin-left: 2;
@@ -82,16 +51,12 @@ _SectionTitle {
     width: 100%;
 }
 
-/* ── Columns table ────────────────────────────────────────── */
-
 #nd-columns-table {
     margin-left: 2;
     margin-bottom: 1;
     max-height: 20;
     width: 100%;
 }
-
-/* ── Dependencies ─────────────────────────────────────────── */
 
 #nd-depends-on-section {
     margin-left: 2;
@@ -113,8 +78,6 @@ _SectionTitle {
     height: 1;
 }
 
-/* ── SQL blocks ───────────────────────────────────────────── */
-
 .nd-sql-block {
     padding: 1 2;
     background: $surface;
@@ -127,243 +90,14 @@ Collapsible {
     margin-top: 1;
 }
 
-/* ── Empty state ──────────────────────────────────────────── */
-
-_EmptyState {
-    width: 100%;
-    height: 100%;
-    content-align: center middle;
-    text-align: center;
-    color: $text-muted;
-    text-style: italic;
-    padding-top: 3;
-}
-
-/* ── Content container ────────────────────────────────────── */
-
 #nd-content {
     width: 100%;
     height: auto;
 }
-
-/* ── Commands section ─────────────────────────────────────── */
 
 #nd-commands-section {
     width: 100%;
     height: auto;
     padding: 0 2;
     color: $text-muted;
-}
-
-/* ── Command Screen (modal) ───────────────────────────────── */
-
-CommandScreen {
-    align: center middle;
-}
-
-#cmd-dialog {
-    width: 90%;
-    height: 85%;
-    border: thick $accent;
-    background: $surface;
-    padding: 0;
-}
-
-#cmd-header {
-    width: 100%;
-    height: auto;
-    padding: 1 2;
-    background: $surface;
-    text-style: bold;
-    color: $text;
-}
-
-#cmd-command-line {
-    width: 100%;
-    height: 1;
-    padding: 0 2;
-    color: $text-muted;
-    text-style: italic;
-}
-
-#cmd-log-scroll {
-    width: 100%;
-    height: 1fr;
-    background: $panel;
-    padding: 0;
-}
-
-#cmd-footer-hint {
-    width: 100%;
-    height: 1;
-    dock: bottom;
-    background: $accent;
-    color: $text;
-    text-align: center;
-    text-style: bold;
-    padding: 0 1;
-}
-
-_StatusBadge {
-    width: auto;
-    height: 1;
-    padding: 0 1;
-    text-style: bold;
-    margin-bottom: 1;
-    margin-left: 2;
-}
-
-_StatusBadge.running {
-    background: $warning;
-    color: $text;
-}
-
-_StatusBadge.success {
-    background: $success;
-    color: $text;
-}
-
-_StatusBadge.error {
-    background: $error;
-    color: $text;
-}
-
-_LogLine {
-    width: 100%;
-    height: auto;
-    padding: 0 2;
-    color: $text;
-}
-
-_LogLine.stderr {
-    color: $error;
-}
-
-_LogLine.status-line {
-    color: $accent;
-    text-style: italic;
-}
-
-/* ── Show Screen (modal) ──────────────────────────────────── */
-
-ShowScreen {
-    align: center middle;
-}
-
-#show-dialog {
-    width: 90%;
-    height: 85%;
-    border: thick $accent;
-    background: $surface;
-    padding: 0;
-}
-
-#show-header {
-    width: 100%;
-    height: auto;
-    padding: 1 2;
-    background: $surface;
-    text-style: bold;
-    color: $text;
-}
-
-#show-command-line {
-    width: 100%;
-    height: 1;
-    padding: 0 2;
-    color: $text-muted;
-    text-style: italic;
-}
-
-#show-results-scroll {
-    width: 100%;
-    height: 1fr;
-    padding: 0;
-}
-
-#show-table {
-    width: 100%;
-    height: 1fr;
-    margin: 0 1;
-}
-
-#show-error-scroll {
-    width: 100%;
-    height: 1fr;
-    background: $panel;
-    padding: 0;
-}
-
-#show-row-count {
-    width: 100%;
-    height: 1;
-    padding: 0 2;
-    color: $text-muted;
-    text-style: italic;
-}
-
-#show-footer-hint {
-    width: 100%;
-    height: 1;
-    dock: bottom;
-    background: $accent;
-    color: $text;
-    text-align: center;
-    text-style: bold;
-    padding: 0 1;
-}
-
-/* ── Project Modal (add / edit) ───────────────────────────── */
-
-ProjectModal {
-    align: center middle;
-}
-
-#project-modal-dialog {
-    width: 70;
-    height: auto;
-    max-height: 24;
-    border: thick $accent;
-    background: $surface;
-    padding: 1 2;
-}
-
-#project-modal-title {
-    text-style: bold;
-    width: 100%;
-    content-align: center middle;
-    text-align: center;
-    margin-bottom: 1;
-}
-
-.project-modal-label {
-    margin-top: 1;
-    margin-bottom: 0;
-    color: $text;
-    text-style: bold;
-}
-
-.project-modal-hint {
-    color: $text-muted;
-    text-style: italic;
-    margin-bottom: 0;
-}
-
-#project-modal-error {
-    color: $error;
-    text-style: bold;
-    margin-top: 1;
-    height: auto;
-    display: none;
-}
-
-#project-modal-buttons {
-    margin-top: 1;
-    width: 100%;
-    height: auto;
-    align: center middle;
-}
-
-#project-modal-buttons Button {
-    margin: 0 1;
 }

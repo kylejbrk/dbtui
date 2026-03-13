@@ -12,7 +12,7 @@ Design goals:
 - Consistent JSON-serializable return values for manifest accessors.
 
 Example:
-    from dbtui.dbt import DBTCLI, DBTProject
+    from dbtui.dbt_client import DBTCLI, DBTProject
 
     cli = DBTCLI()  # will try to find `dbt` on PATH
     project = DBTProject(project_path="./jaffle_shop_duckdb/")
@@ -78,17 +78,7 @@ class DBTCommand(Enum):
     @property
     def display_name(self) -> str:
         """Human-readable label for the command."""
-        _labels = {
-            DBTCommand.BUILD: "Build",
-            DBTCommand.BUILD_UPSTREAM: "Build +upstream",
-            DBTCommand.BUILD_DOWNSTREAM: "Build downstream+",
-            DBTCommand.BUILD_FULL: "Build +full+",
-            DBTCommand.COMPILE: "Compile",
-            DBTCommand.TEST: "Test",
-            DBTCommand.RUN: "Run",
-            DBTCommand.SHOW: "Show",
-        }
-        return _labels.get(self, self.value)
+        return _COMMAND_LABELS.get(self, self.value)
 
     def to_args(self, node_name: str) -> List[str]:
         """Convert command + node name into a list of dbt CLI arguments.
@@ -123,8 +113,8 @@ class DBTCommand(Enum):
                 "--log-format",
                 "json",
             ]
-        # Defensive fallback
-        return ["build", "--select", node_name]
+        # No fallback — every variant must be handled explicitly.
+        raise ValueError(f"Unhandled command: {self}")
 
     @classmethod
     def for_resource_type(cls, resource_type: str) -> List["DBTCommand"]:
@@ -155,6 +145,18 @@ class DBTCommand(Enum):
         return [cls.BUILD, cls.COMPILE]
 
 
+_COMMAND_LABELS = {
+    DBTCommand.BUILD: "Build",
+    DBTCommand.BUILD_UPSTREAM: "Build +upstream",
+    DBTCommand.BUILD_DOWNSTREAM: "Build downstream+",
+    DBTCommand.BUILD_FULL: "Build +full+",
+    DBTCommand.COMPILE: "Compile",
+    DBTCommand.TEST: "Test",
+    DBTCommand.RUN: "Run",
+    DBTCommand.SHOW: "Show",
+}
+
+
 @dataclass
 class DBTStreamEvent:
     """A single event emitted during async dbt command execution.
@@ -163,10 +165,12 @@ class DBTStreamEvent:
         stream: One of ``"stdout"``, ``"stderr"``, or ``"status"``.
                 ``"status"`` is used for lifecycle messages (started / finished / error).
         text: The line of text.
+        exit_code: Only set on the final status event.
     """
 
     stream: str  # "stdout" | "stderr" | "status"
     text: str
+    exit_code: int | None = None  # only set on the final status event
 
 
 class DBTCLI:
@@ -297,19 +301,16 @@ class DBTCLI:
             stderr=asyncio.subprocess.PIPE,
         )
 
-        async def _read_stream(
-            stream: asyncio.StreamReader, name: str
-        ) -> List[DBTStreamEvent]:
-            events: List[DBTStreamEvent] = []
+        queue: asyncio.Queue[DBTStreamEvent | None] = asyncio.Queue()
+
+        async def _read_stream(stream: asyncio.StreamReader, name: str) -> None:
             while True:
                 line_bytes = await stream.readline()
                 if not line_bytes:
                     break
                 line = line_bytes.decode("utf-8", errors="replace").rstrip("\n\r")
-                events.append(DBTStreamEvent(stream=name, text=line))
-            return events
+                await queue.put(DBTStreamEvent(stream=name, text=line))
 
-        # Read stdout and stderr concurrently
         stdout_task = asyncio.create_task(
             _read_stream(process.stdout, "stdout")  # type: ignore[arg-type]
         )
@@ -317,24 +318,34 @@ class DBTCLI:
             _read_stream(process.stderr, "stderr")  # type: ignore[arg-type]
         )
 
-        stdout_events, stderr_events = await asyncio.gather(stdout_task, stderr_task)
+        # Sentinel task: wait for both readers to finish, then push None
+        async def _signal_done() -> None:
+            await asyncio.gather(stdout_task, stderr_task)
+            await queue.put(None)
 
-        # Yield all stdout events, then stderr events
-        for event in stdout_events:
+        done_task = asyncio.create_task(_signal_done())
+
+        while True:
+            event = await queue.get()
+            if event is None:
+                break
             yield event
-        for event in stderr_events:
-            yield event
+
+        await done_task
 
         returncode = await process.wait()
 
         if returncode == 0:
             yield DBTStreamEvent(
-                stream="status", text="✔ Command completed successfully (exit 0)"
+                stream="status",
+                text="✔ Command completed successfully (exit 0)",
+                exit_code=0,
             )
         else:
             yield DBTStreamEvent(
                 stream="status",
                 text=f"✘ Command failed (exit {returncode})",
+                exit_code=returncode,
             )
 
 
@@ -347,6 +358,9 @@ class DBTManifest:
     def __init__(self, data: Dict[str, Any]) -> None:
         self._data = data
         self._native = parse_manifest(manifest=data)
+        self._nodes_json_cache: Dict[str, Dict[str, Any]] | None = None
+        self._sources_json_cache: Dict[str, Dict[str, Any]] | None = None
+        self._macros_json_cache: Dict[str, Dict[str, Any]] | None = None
 
     @classmethod
     def from_file(cls, path: Path) -> "DBTManifest":
@@ -414,15 +428,27 @@ class DBTManifest:
 
     def nodes_json(self) -> Dict[str, Dict[str, Any]]:
         """Return all nodes as JSON-serializable dicts."""
-        return {uid: self._to_jsonable(node) for uid, node in self.nodes.items()}
+        if self._nodes_json_cache is None:
+            self._nodes_json_cache = {
+                uid: self._to_jsonable(node) for uid, node in self.nodes.items()
+            }
+        return self._nodes_json_cache
 
     def sources_json(self) -> Dict[str, Dict[str, Any]]:
         """Return all sources as JSON-serializable dicts."""
-        return {uid: self._to_jsonable(src) for uid, src in self.sources.items()}
+        if self._sources_json_cache is None:
+            self._sources_json_cache = {
+                uid: self._to_jsonable(src) for uid, src in self.sources.items()
+            }
+        return self._sources_json_cache
 
     def macros_json(self) -> Dict[str, Dict[str, Any]]:
         """Return all macros as JSON-serializable dicts."""
-        return {uid: self._to_jsonable(macro) for uid, macro in self.macros.items()}
+        if self._macros_json_cache is None:
+            self._macros_json_cache = {
+                uid: self._to_jsonable(macro) for uid, macro in self.macros.items()
+            }
+        return self._macros_json_cache
 
 
 class DBTProject:
@@ -462,8 +488,13 @@ class DBTProject:
 
     def _load_project_yaml(self) -> None:
         """Internal: read and parse dbt_project.yml into `_project_yaml`."""
-        with self.project_yaml_file.open("r", encoding="utf-8") as fh:
-            self._project_yaml = yaml.safe_load(fh) or {}
+        try:
+            with self.project_yaml_file.open("r", encoding="utf-8") as fh:
+                self._project_yaml = yaml.safe_load(fh) or {}
+        except yaml.YAMLError as exc:
+            raise ValueError(
+                f"Failed to parse {self.project_yaml_file}: {exc}"
+            ) from exc
 
     @property
     def project_yaml(self) -> Dict[str, Any]:
@@ -554,28 +585,23 @@ class DBTProject:
         if not manifest:
             return {}
 
-        nodes = manifest.nodes_json()
-        sources = manifest.sources_json()
-        macros = manifest.macros_json()
-
         if include == "all":
             return {
-                "nodes": nodes,
-                "sources": sources,
-                "macros": macros,
+                "nodes": manifest.nodes_json(),
+                "sources": manifest.sources_json(),
+                "macros": manifest.macros_json(),
             }
         if include == "model":
-            return self._filter_nodes_by_resource_type(nodes, "model")
+            return self._filter_nodes_by_resource_type(manifest.nodes_json(), "model")
         if include == "seed":
-            return self._filter_nodes_by_resource_type(nodes, "seed")
+            return self._filter_nodes_by_resource_type(manifest.nodes_json(), "seed")
         if include == "test":
-            return self._filter_nodes_by_resource_type(nodes, "test")
+            return self._filter_nodes_by_resource_type(manifest.nodes_json(), "test")
         if include == "source":
-            return sources
+            return manifest.sources_json()
         if include == "macro":
-            return macros
+            return manifest.macros_json()
 
-        # Defensive fallback; should be unreachable because include is validated.
         return {}
 
     def get_nodes(self) -> Dict[str, Any]:

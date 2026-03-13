@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from collections import defaultdict
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
@@ -7,6 +8,8 @@ from textual.binding import Binding
 from textual.message import Message
 from textual.widgets import Tree
 from textual.widgets._tree import TreeNode
+
+logger = logging.getLogger(__name__)
 
 
 class SideBar(Tree):
@@ -74,7 +77,7 @@ class SideBar(Tree):
         # Project management
         Binding("p", "add_project", "Add Project", show=True),
         Binding("e", "edit_project", "Edit Project", show=True),
-        Binding("d", "remove_project", "Remove Project", show=False),
+        Binding("x", "remove_project", "Remove Project", show=True),
     ]
 
     def __init__(
@@ -178,10 +181,8 @@ class SideBar(Tree):
 
     def populate(self) -> None:
         """(Re-)populate the tree from all registered projects."""
-        try:
+        if self.is_mounted:
             self.clear()
-        except Exception:
-            pass
 
         if not self._projects:
             # Show a helpful placeholder
@@ -201,7 +202,9 @@ class SideBar(Tree):
         )
 
         if dbt_project is None:
-            project_node.add_leaf("[dim]manifest not found[/]")
+            project_node.add_leaf(
+                "[dim]manifest not found — run [bold]dbt compile[/bold] first[/]"
+            )
             return
 
         if "model" in self.include:

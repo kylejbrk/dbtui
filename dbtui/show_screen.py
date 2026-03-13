@@ -27,71 +27,16 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
-from dbt import DBTCLI, DBTCommand
+from rich.text import Text
 from textual import work
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Vertical, VerticalScroll
 from textual.screen import ModalScreen
-from textual.widgets import DataTable, Label, Rule, Static
+from textual.widgets import DataTable, Label, RichLog, Rule, Static
 
-
-class _ShowHeader(Static):
-    """Displays the command name and node."""
-
-    DEFAULT_CSS = """
-    _ShowHeader {
-        width: 100%;
-        height: auto;
-        padding: 1 2;
-        background: $surface;
-        text-style: bold;
-        color: $text;
-    }
-    """
-
-
-class _StatusBadge(Static):
-    """Small badge showing running / success / error."""
-
-    DEFAULT_CSS = """
-    _StatusBadge {
-        width: auto;
-        height: 1;
-        padding: 0 1;
-        text-style: bold;
-        margin-bottom: 1;
-        margin-left: 2;
-    }
-    _StatusBadge.running {
-        background: $warning;
-        color: $text;
-    }
-    _StatusBadge.success {
-        background: $success;
-        color: $text;
-    }
-    _StatusBadge.error {
-        background: $error;
-        color: $text;
-    }
-    """
-
-
-class _ErrorLine(Static):
-    """A single line of error / diagnostic output (plain text, no markup)."""
-
-    DEFAULT_CSS = """
-    _ErrorLine {
-        width: 100%;
-        height: auto;
-        padding: 0 2;
-        color: $error;
-    }
-    """
-
-    def __init__(self, content: str, **kwargs):
-        super().__init__(content, markup=False, **kwargs)
+from dbtui.dbt_client import DBTCLI, DBTCommand
+from dbtui.widgets import ScreenHeader, StatusBadge
 
 
 class ShowScreen(ModalScreen[Optional[int]]):
@@ -185,7 +130,7 @@ class ShowScreen(ModalScreen[Optional[int]]):
         with Vertical(id="show-dialog"):
             cmd_args = self.command.to_args(self.node_name)
             cmd_display = f"dbt {' '.join(cmd_args)}"
-            yield _ShowHeader(
+            yield ScreenHeader(
                 f"👁  Show  ─  [bold]{self.node_name}[/bold]",
                 id="show-header",
             )
@@ -193,14 +138,16 @@ class ShowScreen(ModalScreen[Optional[int]]):
                 f"  $ {cmd_display}",
                 id="show-command-line",
             )
-            yield _StatusBadge(" ⏳ RUNNING ", id="show-status", classes="running")
+            yield StatusBadge(" ⏳ RUNNING ", id="show-status", classes="running")
             yield Rule(line_style="heavy")
             yield Label("", id="show-row-count")
             yield VerticalScroll(
                 DataTable(id="show-table", show_cursor=True),
                 id="show-results-scroll",
             )
-            yield VerticalScroll(id="show-error-scroll")
+            yield RichLog(
+                id="show-error-scroll", wrap=True, highlight=False, markup=False
+            )
             yield Static(
                 " Press [bold]Esc[/bold] or [bold]q[/bold] to close ",
                 id="show-footer-hint",
@@ -218,7 +165,8 @@ class ShowScreen(ModalScreen[Optional[int]]):
     # ------------------------------------------------------------------
 
     def action_close_screen(self) -> None:
-        """Dismiss the screen, returning the exit code."""
+        """Cancel any running command and dismiss the screen."""
+        self.workers.cancel_group(self, "dbt_show")
         self.dismiss(self._exit_code)
 
     # ------------------------------------------------------------------
@@ -287,19 +235,12 @@ class ShowScreen(ModalScreen[Optional[int]]):
         try:
             args = self.command.to_args(self.node_name)
             async for event in self.cli.run_async(args, cwd=self.project_path):
+                if event.exit_code is not None:
+                    self._exit_code = event.exit_code
                 if event.stream == "stdout":
                     collected_stdout.append(event.text)
                 elif event.stream == "stderr":
                     collected_stderr.append(event.text)
-                elif event.stream == "status" and "exit" in event.text:
-                    if "exit 0" in event.text:
-                        self._exit_code = 0
-                    else:
-                        try:
-                            code_str = event.text.rsplit("exit ", 1)[-1].rstrip(")")
-                            self._exit_code = int(code_str)
-                        except (ValueError, IndexError):
-                            self._exit_code = 1
 
         except FileNotFoundError as exc:
             collected_stderr.append(f"ERROR: {exc}")
@@ -315,7 +256,7 @@ class ShowScreen(ModalScreen[Optional[int]]):
         full_stdout = "\n".join(collected_stdout)
         rows = self._parse_preview_from_json_lines(full_stdout)
 
-        badge = self.query_one("#show-status", _StatusBadge)
+        badge = self.query_one("#show-status", StatusBadge)
 
         if self._exit_code == 0 and rows:
             self._render_table(rows)
@@ -366,7 +307,7 @@ class ShowScreen(ModalScreen[Optional[int]]):
         self, stdout_lines: list[str], stderr_lines: list[str]
     ) -> None:
         """Fall back to showing the raw command output when parsing fails."""
-        error_scroll = self.query_one("#show-error-scroll", VerticalScroll)
+        error_scroll = self.query_one("#show-error-scroll", RichLog)
         error_scroll.display = True
 
         all_lines = stdout_lines + stderr_lines
@@ -374,4 +315,4 @@ class ShowScreen(ModalScreen[Optional[int]]):
             all_lines = ["(no output)"]
 
         for line_text in all_lines:
-            error_scroll.mount(_ErrorLine(line_text))
+            error_scroll.write(Text(line_text, style="red"))

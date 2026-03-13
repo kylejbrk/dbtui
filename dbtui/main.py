@@ -1,27 +1,33 @@
 import argparse
+import logging
 from pathlib import Path
 
-from add_project_modal import ProjectModal, ProjectModalResult
-from command_screen import CommandScreen
-from dbt import DBTCLI, DBTCommand, DBTProject
-from node_details import NodeDetailsWidget
-from project_store import ProjectEntry, ProjectStore
-from show_screen import ShowScreen
-from sidebar import SideBar
+from textual import on, work
 from textual.app import App
 from textual.binding import Binding
 from textual.containers import Horizontal
 from textual.widgets import Footer, Header
 
+from dbtui.add_project_modal import ProjectModal, ProjectModalResult
+from dbtui.command_screen import CommandScreen
+from dbtui.dbt_client import DBTCLI, DBTCommand, DBTProject
+from dbtui.node_details import NodeDetailsWidget
+from dbtui.project_store import ProjectEntry, ProjectStore
+from dbtui.show_screen import ShowScreen
+from dbtui.sidebar import SideBar
+
+logger = logging.getLogger(__name__)
+
 
 class DBTUI(App):
     CSS_PATH = "dbtui.tcss"
     BINDINGS = [
-        ("q", "quit", "Quit"),
-        Binding("ctrl+h", "focus_sidebar", "Focus Sidebar", show=False),
-        Binding("ctrl+l", "focus_details", "Focus Details", show=False),
-        Binding("tab", "toggle_pane", "Toggle Pane", show=False),
-        Binding("a", "toggle_sidebar", "Toggle Sidebar", show=False),
+        Binding("q", "quit", "Quit"),
+        Binding("1", "focus_sidebar", "Sidebar", show=False),
+        Binding("2", "focus_details", "Details", show=False),
+        Binding("tab", "toggle_pane", "Switch Pane", show=True),
+        Binding("backslash", "toggle_sidebar", "Toggle Sidebar", show=True),
+        Binding("question_mark", "show_help", "Help", show=True),
     ]
 
     def __init__(self, project_path=None, dbt_path=None):
@@ -37,7 +43,6 @@ class DBTUI(App):
 
         # Build the live list of (ProjectEntry, DBTProject | None) tuples
         self._projects: list[tuple[ProjectEntry, DBTProject | None]] = []
-        self._reload_projects()
 
     # ------------------------------------------------------------------
     # Project helpers
@@ -74,7 +79,8 @@ class DBTUI(App):
             proj = DBTProject(project_path=entry.project_path)
             proj.load_manifest()
             return proj
-        except Exception:
+        except Exception as exc:
+            logger.warning("Failed to load project %s: %s", entry.project_path, exc)
             return None
 
     def _cli_for_entry(self, entry: ProjectEntry) -> DBTCLI:
@@ -117,14 +123,26 @@ class DBTUI(App):
 
     def on_mount(self):
         self.title = "DBTUI"
+        self.sub_title = "Loading..."
+        sidebar = self.query_one("#sidebar")
+        sidebar.border_title = "Projects"
+        self._load_projects_worker()
+
+    @work(thread=True, exclusive=True, group="load_projects")
+    def _load_projects_worker(self) -> None:
+        """Load all projects in a background thread."""
+        self._reload_projects()
+        self.app.call_from_thread(self._on_projects_loaded)
+
+    def _on_projects_loaded(self) -> None:
+        """Called on the main thread after projects finish loading."""
+        sidebar = self.query_one("#sidebar", SideBar)
+        sidebar.set_projects(self._projects)
         if self._projects:
             first_entry = self._projects[0][0]
             self.sub_title = first_entry.display_name
         else:
             self.sub_title = "No projects"
-
-        sidebar = self.query_one("#sidebar")
-        sidebar.border_title = "Projects"
 
     # ------------------------------------------------------------------
     # Pane focus switching (vim-style)
@@ -151,6 +169,12 @@ class DBTUI(App):
             self.query_one("#node_details", NodeDetailsWidget).focus()
         else:
             sidebar.focus()
+
+    def action_show_help(self) -> None:
+        """Show help overlay with keybindings."""
+        from dbtui.help_screen import HelpScreen
+
+        self.push_screen(HelpScreen())
 
     # ------------------------------------------------------------------
     # Add / remove project via sidebar messages
@@ -207,21 +231,35 @@ class DBTUI(App):
     def on_side_bar_remove_project_requested(
         self, event: SideBar.RemoveProjectRequested
     ) -> None:
-        """Remove a project from the store and refresh the sidebar."""
-        removed = self.store.remove(event.project_path)
-        if removed:
-            self._reload_projects()
-            sidebar = self.query_one("#sidebar", SideBar)
-            sidebar.set_projects(self._projects)
-            self.notify("Project removed.")
-        else:
-            self.notify("Project not found in store.", severity="warning")
+        """Confirm and remove a project from the store."""
+        entry = self.store.get(event.project_path)
+        name = entry.display_name if entry else "this project"
+
+        def handle_confirmation(confirmed: bool | None) -> None:
+            if not confirmed:
+                return
+            removed = self.store.remove(event.project_path)
+            if removed:
+                self._reload_projects()
+                sidebar = self.query_one("#sidebar", SideBar)
+                sidebar.set_projects(self._projects)
+                self.notify(f"Removed project: {name}")
+            else:
+                self.notify("Project not found in store.", severity="warning")
+
+        from dbtui.confirm_modal import ConfirmModal
+
+        self.push_screen(
+            ConfirmModal(f"Remove project '{name}'?"),
+            callback=handle_confirmation,
+        )
 
     # ------------------------------------------------------------------
     # Event handlers
     # ------------------------------------------------------------------
 
-    def on_tree_node_selected(self, event: SideBar.NodeSelected) -> None:
+    @on(SideBar.NodeSelected, "#sidebar")
+    def handle_node_selected(self, event: SideBar.NodeSelected) -> None:
         details_widget = self.query_one("#node_details", NodeDetailsWidget)
         if event.node.data and isinstance(event.node.data, dict):
             # Skip project-level nodes (they have "entry" key)
@@ -236,7 +274,7 @@ class DBTUI(App):
     ) -> None:
         """Handle a dbt command request from the node details panel."""
         # Find which project owns the node
-        node_data = getattr(event, "_node_data", None)
+        node_data = event.node_details
         entry = None
         if node_data:
             entry = self._find_entry_for_node(node_data)
@@ -288,7 +326,7 @@ class DBTUI(App):
         self.push_screen(screen)
 
 
-if __name__ == "__main__":
+def main():
     parser = argparse.ArgumentParser(description="DBT TUI for viewing models")
     parser.add_argument(
         "--project-path",
@@ -303,6 +341,9 @@ if __name__ == "__main__":
         help="Path to dbt executable.",
     )
     args = parser.parse_args()
-
     app = DBTUI(args.project_path, args.dbt_path)
     app.run()
+
+
+if __name__ == "__main__":
+    main()
