@@ -22,13 +22,9 @@
 
 #node_details {
     height: 100%;
-    border: round gray;
+    border: none;
     padding: 0;
     overflow-y: auto;
-}
-
-#node_details:focus-within {
-    border: round $accent;
 }
 
 /* ── Node Details sections ────────────────────────────────── */
@@ -100,4 +96,32 @@ Collapsible {
     height: auto;
     padding: 0 2;
     color: $text-muted;
+}
+
+/* ── Tabbed Content ───────────────────────────────────────── */
+
+#main-tabs {
+    height: 100%;
+    border: round gray;
+}
+
+#main-tabs:focus-within {
+    border: round $accent;
+}
+
+#main-tabs ContentSwitcher {
+    height: 1fr;
+}
+
+#tab-details, #tab-lineage {
+    height: 100%;
+    padding: 0;
+}
+
+/* ── Lineage Graph ────────────────────────────────────────── */
+
+#lineage_graph {
+    height: 100%;
+    padding: 1 2;
+    overflow-y: auto;
 }

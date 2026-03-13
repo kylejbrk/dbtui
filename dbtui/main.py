@@ -6,11 +6,12 @@ from textual import on, work
 from textual.app import App
 from textual.binding import Binding
 from textual.containers import Horizontal
-from textual.widgets import Footer, Header
+from textual.widgets import Footer, Header, TabbedContent, TabPane
 
 from dbtui.add_project_modal import ProjectModal, ProjectModalResult
 from dbtui.command_screen import CommandScreen
 from dbtui.dbt_client import DBTCLI, DBTCommand, DBTProject
+from dbtui.lineage_graph import LineageGraphWidget
 from dbtui.node_details import NodeDetailsWidget
 from dbtui.project_store import ProjectEntry, ProjectStore
 from dbtui.show_screen import ShowScreen
@@ -118,7 +119,11 @@ class DBTUI(App):
                 projects=self._projects,
                 id="sidebar",
             )
-            yield NodeDetailsWidget(id="node_details")
+            with TabbedContent(id="main-tabs"):
+                with TabPane("Details", id="tab-details"):
+                    yield NodeDetailsWidget(id="node_details")
+                with TabPane("Lineage", id="tab-lineage"):
+                    yield LineageGraphWidget(id="lineage_graph")
         yield Footer()
 
     def on_mount(self):
@@ -138,11 +143,30 @@ class DBTUI(App):
         """Called on the main thread after projects finish loading."""
         sidebar = self.query_one("#sidebar", SideBar)
         sidebar.set_projects(self._projects)
+
+        # Feed all nodes/sources into the lineage widget so it can resolve UIDs
+        self._sync_lineage_manifest()
+
         if self._projects:
             first_entry = self._projects[0][0]
             self.sub_title = first_entry.display_name
         else:
             self.sub_title = "No projects"
+
+    def _sync_lineage_manifest(self) -> None:
+        """Push the combined node + source maps into the lineage graph widget."""
+        all_nodes: dict = {}
+        all_sources: dict = {}
+        for _entry, dbt_project in self._projects:
+            if dbt_project is None:
+                continue
+            all_nodes.update(dbt_project.get_nodes())
+            all_sources.update(dbt_project.get_sources())
+        try:
+            lineage = self.query_one("#lineage_graph", LineageGraphWidget)
+            lineage.set_manifest_data(all_nodes, all_sources)
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------
     # Pane focus switching (vim-style)
@@ -152,13 +176,16 @@ class DBTUI(App):
         self.query_one("#sidebar", SideBar).focus()
 
     def action_focus_details(self) -> None:
-        self.query_one("#node_details", NodeDetailsWidget).focus()
+        tabs = self.query_one("#main-tabs", TabbedContent)
+        if tabs.active == "tab-lineage":
+            self.query_one("#lineage_graph", LineageGraphWidget).focus()
+        else:
+            self.query_one("#node_details", NodeDetailsWidget).focus()
 
     def action_toggle_pane(self) -> None:
         sidebar = self.query_one("#sidebar", SideBar)
-        details = self.query_one("#node_details", NodeDetailsWidget)
         if sidebar.has_focus or sidebar.has_focus_within:
-            details.focus()
+            self.action_focus_details()
         else:
             sidebar.focus()
 
@@ -166,7 +193,7 @@ class DBTUI(App):
         sidebar = self.query_one("#sidebar", SideBar)
         sidebar.display = not sidebar.display
         if not sidebar.display:
-            self.query_one("#node_details", NodeDetailsWidget).focus()
+            self.action_focus_details()
         else:
             sidebar.focus()
 
@@ -212,6 +239,7 @@ class DBTUI(App):
             self._reload_projects()
             sidebar = self.query_one("#sidebar", SideBar)
             sidebar.set_projects(self._projects)
+            self._sync_lineage_manifest()
             self.notify(f"Updated project: {entry.display_name}")
         else:
             added = self.store.add(entry)
@@ -222,6 +250,7 @@ class DBTUI(App):
             self._reload_projects()
             sidebar = self.query_one("#sidebar", SideBar)
             sidebar.set_projects(self._projects)
+            self._sync_lineage_manifest()
             self.notify(f"Added project: {entry.display_name}")
 
             # Update subtitle if this is the first project
@@ -243,6 +272,7 @@ class DBTUI(App):
                 self._reload_projects()
                 sidebar = self.query_one("#sidebar", SideBar)
                 sidebar.set_projects(self._projects)
+                self._sync_lineage_manifest()
                 self.notify(f"Removed project: {name}")
             else:
                 self.notify("Project not found in store.", severity="warning")
@@ -261,13 +291,47 @@ class DBTUI(App):
     @on(SideBar.NodeSelected, "#sidebar")
     def handle_node_selected(self, event: SideBar.NodeSelected) -> None:
         details_widget = self.query_one("#node_details", NodeDetailsWidget)
+        lineage_widget = self.query_one("#lineage_graph", LineageGraphWidget)
         if event.node.data and isinstance(event.node.data, dict):
             # Skip project-level nodes (they have "entry" key)
             if "entry" in event.node.data:
                 return
             details_widget.update_details(event.node.data)
+            lineage_widget.update_node(event.node.data)
         else:
             details_widget.update_details({})
+            lineage_widget.clear_node()
+
+    @on(LineageGraphWidget.NodeNavigated)
+    def handle_lineage_navigation(
+        self, event: LineageGraphWidget.NodeNavigated
+    ) -> None:
+        """When the user clicks a node in the lineage graph, navigate to it."""
+        uid = event.unique_id
+        # Look up the full node dict across all projects
+        for _entry, dbt_project in self._projects:
+            if dbt_project is None:
+                continue
+            nodes = dbt_project.get_nodes()
+            sources = dbt_project.get_sources()
+            if uid in nodes:
+                node_data = nodes[uid]
+                self.query_one("#node_details", NodeDetailsWidget).update_details(
+                    node_data
+                )
+                self.query_one("#lineage_graph", LineageGraphWidget).update_node(
+                    node_data
+                )
+                return
+            if uid in sources:
+                node_data = sources[uid]
+                self.query_one("#node_details", NodeDetailsWidget).update_details(
+                    node_data
+                )
+                self.query_one("#lineage_graph", LineageGraphWidget).update_node(
+                    node_data
+                )
+                return
 
     def on_node_details_widget_command_requested(
         self, event: NodeDetailsWidget.CommandRequested
