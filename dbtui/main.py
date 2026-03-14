@@ -15,6 +15,7 @@ from dbtui.node_details import NodeDetailsWidget
 from dbtui.project_store import ProjectEntry, ProjectStore
 from dbtui.show_screen import ShowScreen
 from dbtui.sidebar import SideBar
+from dbtui.theme import ALL_THEMES
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +35,11 @@ class DBTUI(App):
         super().__init__()
         self.initial_project_path = project_path
         self.initial_dbt_path = dbt_path
+
+        # Register dbt-branded themes and set the dark variant as default
+        for theme in ALL_THEMES:
+            self.register_theme(theme)
+        self.theme = "dbt-dark"
 
         # Persistent project store
         self.store = ProjectStore()

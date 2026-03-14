@@ -94,8 +94,8 @@ class ShowScreen(ModalScreen[Optional[int]]):
         width: 100%;
         height: 1;
         dock: bottom;
-        background: $accent;
-        color: $text;
+        background: $primary;
+        color: $background;
         text-align: center;
         text-style: bold;
         padding: 0 1;
