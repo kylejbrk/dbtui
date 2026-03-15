@@ -1,4 +1,5 @@
 # dbtui
+![dbtui demo](screenshots/demo.svg)
 
 A terminal user interface for [dbt](https://www.getdbt.com/) (data build tool) built with [Textual](https://textual.textualize.io/).
 
