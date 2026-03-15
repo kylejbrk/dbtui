@@ -43,5 +43,6 @@ class ScreenHeader(Static):
         background: $surface;
         text-style: bold;
         color: $text;
+        border-bottom: solid $secondary;
     }
     """

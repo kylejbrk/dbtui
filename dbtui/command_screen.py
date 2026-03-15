@@ -58,7 +58,7 @@ class CommandScreen(ModalScreen[Optional[int]]):
     #cmd-dialog {
         width: 90%;
         height: 85%;
-        border: thick $accent;
+        border: thick $secondary;
         background: $surface;
         padding: 0;
     }

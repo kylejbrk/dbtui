@@ -9,7 +9,7 @@ from textual.screen import ModalScreen
 from textual.widgets import Label, Rule, Static
 
 _HELP_TEXT = """\
-[bold #FF694B]── Global ──[/]
+[bold #4A6FA5]── Global ──[/]
   [bold]q[/]         Quit
   [bold]Tab[/]       Switch pane
   [bold]\\[/]         Toggle sidebar
@@ -17,7 +17,7 @@ _HELP_TEXT = """\
   [bold]2[/]         Focus details
   [bold]?[/]         Show this help
 
-[bold #FF694B]── Sidebar (Tree) ──[/]
+[bold #4A6FA5]── Sidebar (Tree) ──[/]
   [bold]j / k[/]     Move cursor down / up
   [bold]h[/]         Collapse node or go to parent
   [bold]l[/]         Expand node or go to first child
@@ -28,12 +28,12 @@ _HELP_TEXT = """\
   [bold]e[/]         Edit project
   [bold]x[/]         Remove project
 
-[bold #FF694B]── Node Details ──[/]
+[bold #4A6FA5]── Node Details ──[/]
   [bold]j / k[/]     Scroll down / up
   [bold]g / G[/]     Scroll to top / bottom
   [bold]Escape[/]    Back to sidebar
 
-[bold #FF694B]── dbt Commands (in Details pane) ──[/]
+[bold #4A6FA5]── dbt Commands (in Details pane) ──[/]
   [bold]b[/]         Build
   [bold]B[/]         Build +upstream
   [bold]d[/]         Build downstream+
@@ -43,7 +43,7 @@ _HELP_TEXT = """\
   [bold]t[/]         Test
   [bold]s[/]         Show (preview data)
 
-[bold #FF694B]── Modal Screens ──[/]
+[bold #4A6FA5]── Modal Screens ──[/]
   [bold]Escape[/]    Close / Cancel
   [bold]q[/]         Close command output
 """
@@ -60,7 +60,7 @@ class HelpScreen(ModalScreen[None]):
     #help-dialog {
         width: 60;
         height: 80%;
-        border: thick $accent;
+        border: thick $secondary;
         background: $surface;
         padding: 1 2;
     }
@@ -70,7 +70,7 @@ class HelpScreen(ModalScreen[None]):
         width: 100%;
         text-align: center;
         margin-bottom: 1;
-        color: $accent;
+        color: $secondary;
     }
 
     #help-content {

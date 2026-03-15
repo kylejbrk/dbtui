@@ -31,7 +31,7 @@ class _SectionTitle(Static):
     DEFAULT_CSS = """
     _SectionTitle {
         text-style: bold;
-        color: $accent;
+        color: $secondary;
         margin-top: 1;
         margin-bottom: 0;
         width: 100%;

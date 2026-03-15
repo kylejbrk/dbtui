@@ -4,8 +4,13 @@
    Widget-level defaults are in each widget's DEFAULT_CSS.
    This file handles layout, composition, and overrides only.
 
-   Colour tokens ($accent, $surface, $primary, …) are resolved
-   from the active Textual Theme registered in main.py.
+   Colour tokens ($accent, $surface, $primary, $secondary, …)
+   are resolved from the active Textual Theme registered in
+   main.py.
+
+   Convention:
+   - $accent / $primary (orange) → interactive & focused elements
+   - $secondary (blue)           → structural / passive chrome
    ══════════════════════════════════════════════════════════════ */
 
 /* ── Layout ───────────────────────────────────────────────── */
@@ -15,7 +20,7 @@
     width: auto;
     height: 100%;
     padding: 1;
-    border: round $primary 40%;
+    border: round $secondary 40%;
 }
 
 #sidebar:focus-within {
@@ -25,7 +30,7 @@
 
 #node_details {
     height: 100%;
-    border: round $primary 40%;
+    border: round $secondary 40%;
     padding: 0;
     overflow-y: auto;
 }
@@ -38,7 +43,7 @@
 
 Header {
     background: $surface;
-    color: $accent;
+    color: $secondary;
 }
 
 Footer {
@@ -106,7 +111,7 @@ Collapsible {
 }
 
 CollapsibleTitle {
-    color: $accent;
+    color: $secondary;
 }
 
 #nd-content {
@@ -125,14 +130,14 @@ CollapsibleTitle {
 
 DataTable > .datatable--header {
     background: $surface;
-    color: $accent;
+    color: $secondary;
     text-style: bold;
 }
 
 /* ── Rule (divider) tint ──────────────────────────────────── */
 
 Rule {
-    color: $primary 25%;
+    color: $secondary 25%;
 }
 
 /* ── Tree / Sidebar ───────────────────────────────────────── */
@@ -154,9 +159,9 @@ Tree > .tree--highlight {
 }
 
 Tree > .tree--guides {
-    color: $primary 40%;
+    color: $secondary 40%;
 }
 
 Tree > .tree--guides-hover {
-    color: $primary 60%;
+    color: $secondary 60%;
 }

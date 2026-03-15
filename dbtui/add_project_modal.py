@@ -64,7 +64,7 @@ class ProjectModal(ModalScreen[Optional[ProjectModalResult]]):
         width: 70;
         height: auto;
         max-height: 24;
-        border: thick $accent;
+        border: thick $secondary;
         background: $surface;
         padding: 1 2;
     }

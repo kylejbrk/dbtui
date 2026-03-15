@@ -58,7 +58,7 @@ class ShowScreen(ModalScreen[Optional[int]]):
     #show-dialog {
         width: 90%;
         height: 85%;
-        border: thick $accent;
+        border: thick $secondary;
         background: $surface;
         padding: 0;
     }
