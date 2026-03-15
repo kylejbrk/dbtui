@@ -101,28 +101,6 @@ dbtui --dbt-path /path/to/dbt
 | `Escape` | Close / Cancel |
 | `q` | Close command output |
 
-## Project Structure
-
-```
-dbtui/
-├── pyproject.toml
-└── dbtui/
-    ├── __init__.py
-    ├── __main__.py          # python -m dbtui support
-    ├── main.py              # App entry point
-    ├── dbt_client.py        # dbt CLI wrapper, manifest parser, project loader
-    ├── sidebar.py           # Project tree widget
-    ├── node_details.py      # Node detail panel
-    ├── command_screen.py    # Modal for running dbt commands
-    ├── show_screen.py       # Modal for dbt show with DataTable
-    ├── add_project_modal.py # Add/edit project dialog
-    ├── confirm_modal.py     # Confirmation dialog
-    ├── help_screen.py       # Keybinding help overlay
-    ├── project_store.py     # Persistent project storage
-    ├── widgets.py           # Shared widget components
-    └── dbtui.tcss           # Stylesheet
-```
-
 ## Configuration
 
 Project registrations are stored in:
